@@ -158,6 +158,19 @@ async def health_check():
     return {"status": "ok"}
 
 
+class InjectTranscriptEntry(BaseModel):
+    text: str
+    speaker: str | None = None
+    timestamp: str | None = None
+    confidence: float | None = None
+
+
+class InjectTranscriptRequest(BaseModel):
+    entries: list[InjectTranscriptEntry]
+    runAgents: bool = True
+    sendFrontend: bool = True
+
+
 from fastapi.responses import HTMLResponse
 
 @app.get("/test", response_class=HTMLResponse)
@@ -201,6 +214,77 @@ async def create_meeting(request: CreateMeetingRequest):
     await storage.save_preparation(state)
 
     return {"id": meeting_id, "status": "preparing"}
+
+
+@app.post("/api/v1/meetings/{meeting_id}/inject_transcript")
+async def inject_transcript(meeting_id: str, request: InjectTranscriptRequest):
+    """Inject transcript entries and optionally run agents (E2E verification)."""
+    state = meetings.get(meeting_id)
+    if not state:
+        state = MeetingState(
+            meeting_id=meeting_id,
+            title=meeting_id,
+            participants=[],
+            principles=[],
+        )
+        meetings[meeting_id] = state
+
+    storage = StorageService()
+    safety_orchestrator = SafetyOrchestrator()
+
+    appended = 0
+    for entry in request.entries:
+        if not entry.text:
+            continue
+        speaker = entry.speaker or "Injected"
+        for p in state.participants:
+            if p.name == speaker:
+                p.speaking_count += 1
+                break
+        transcript_entry = TranscriptEntry(
+            id=f"tr_{uuid.uuid4().hex[:8]}",
+            timestamp=entry.timestamp or datetime.utcnow().isoformat(),
+            speaker=speaker,
+            text=entry.text,
+            confidence=entry.confidence or 0.0,
+            latency_ms=0.0,
+        )
+        state.transcript.append(transcript_entry)
+        await storage.append_transcript_entry(state, transcript_entry)
+        appended += 1
+        if request.sendFrontend:
+            await manager.send_message(
+                meeting_id, {"type": "transcript", "data": transcript_entry.__dict__}
+            )
+
+    intervention_payload = None
+    if request.runAgents and state.transcript:
+        result = await safety_orchestrator.analyze(state, state.transcript[-10:])
+        intervention = result.intervention
+        if result.errors:
+            logger.warning(f"[{meeting_id}] Agent errors: {[e.error for e in result.errors]}")
+        if result.warnings:
+            logger.warning(f"[{meeting_id}] Safety warnings: {result.warnings}")
+
+        if intervention:
+            state.interventions.append(intervention)
+            if intervention.parking_lot_item:
+                state.parking_lot.append(intervention.parking_lot_item)
+            await storage.save_interventions(state)
+            intervention_payload = {
+                "id": intervention.id,
+                "type": intervention.intervention_type.value,
+                "message": intervention.message,
+                "timestamp": intervention.timestamp,
+                "violatedPrinciple": intervention.violated_principle,
+                "parkingLotItem": intervention.parking_lot_item,
+            }
+            if request.sendFrontend:
+                await manager.send_message(
+                    meeting_id, {"type": "intervention", "data": intervention_payload}
+                )
+
+    return {"status": "ok", "appended": appended, "intervention": intervention_payload}
 
 
 def _build_speaker_stats(state: MeetingState) -> dict[str, SpeakerStatsEntry]:
