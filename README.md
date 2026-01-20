@@ -6,12 +6,20 @@ Meeting Operator demo app (React + Python + OpenAI SDK) + Multi-Agent workflow d
 
 Quick start:
 ```bash
-cp .env.compose.example .env.compose
+cp docker/.env.compose.example .env.compose
 # edit .env.compose and set OPENAI_API_KEY
-docker compose --env-file .env.compose up --build
+docker compose -f docker/docker-compose.yml --env-file .env.compose up --build
 ```
 
 Open the UI at `http://localhost:3000`. Full instructions are in `docs/08-DEMO-APP.md`.
+
+## Demo restart (down/up)
+
+```bash
+# from repo root
+docker compose -f docker/docker-compose.yml --env-file .env.compose down
+docker compose -f docker/docker-compose.yml --env-file .env.compose up --build -d
+```
 
 ## 설치 방법
 
