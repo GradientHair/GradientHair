@@ -405,6 +405,40 @@ principles_service = PrinciplesService()
 class PrinciplesListResponse(BaseModel):
     principles: list[Principle]
 
+class MeetingListItem(BaseModel):
+    id: str
+    title: str | None
+    scheduledAt: str | None
+    updatedAt: str | None
+    hasTranscript: bool
+    hasInterventions: bool
+
+
+class MeetingListResponse(BaseModel):
+    meetings: list[MeetingListItem]
+
+class MeetingFilesResponse(BaseModel):
+    id: str
+    preparation: str | None
+    transcript: str | None
+    interventions: str | None
+
+
+@app.get("/api/v1/meetings", response_model=MeetingListResponse)
+async def list_meetings():
+    storage = StorageService()
+    meetings = storage.list_meetings()
+    return MeetingListResponse(meetings=meetings)
+
+
+@app.get("/api/v1/meetings/{meeting_id}/files", response_model=MeetingFilesResponse)
+async def get_meeting_files(meeting_id: str):
+    storage = StorageService()
+    files = storage.get_meeting_files(meeting_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Meeting files not found")
+    return files
+
 
 @app.get("/api/v1/principles", response_model=PrinciplesListResponse)
 async def list_principles():
