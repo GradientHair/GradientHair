@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +38,8 @@ from services.principles_service import (
     PrincipleUpdate,
     PrincipleCreateResponse,
 )
-from agents.triage_agent import TriageAgent
+from agents.review_agent import ReviewOrchestratorAgent
+from agents.safety_orchestrator import SafetyOrchestrator
 
 app = FastAPI(title="MeetingMod API")
 
@@ -314,6 +315,14 @@ async def end_meeting(meeting_id: str):
     storage = StorageService()
     await storage.save_transcript(state)
     await storage.save_interventions(state)
+    try:
+        review_agent = ReviewOrchestratorAgent()
+        review = await review_agent.review(state)
+        await storage.save_summary(state, review.summary_markdown)
+        await storage.save_action_items(state, review.action_items_markdown)
+        await storage.save_individual_feedback(state, review.feedback_by_participant)
+    except Exception as e:
+        logger.error(f"Review generation failed: {e}")
 
     return {"id": meeting_id, "status": "completed"}
 
@@ -366,11 +375,22 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
     await storage.save_preparation(state)
     await storage.save_transcript(state)
     await storage.save_interventions(state)
+    try:
+        review_agent = ReviewOrchestratorAgent()
+        review = await review_agent.review(state)
+        await storage.save_summary(state, review.summary_markdown)
+        await storage.save_action_items(state, review.action_items_markdown)
+        await storage.save_individual_feedback(state, review.feedback_by_participant)
+    except Exception as e:
+        logger.error(f"Review generation failed: {e}")
 
     return {"id": meeting_id, "status": "saved", "files": [
         f"meetings/{meeting_id}/preparation.md",
         f"meetings/{meeting_id}/transcript.md",
         f"meetings/{meeting_id}/interventions.md",
+        f"meetings/{meeting_id}/summary.md",
+        f"meetings/{meeting_id}/action-items.md",
+        f"meetings/{meeting_id}/feedback/",
     ]}
 
 
@@ -384,6 +404,40 @@ principles_service = PrinciplesService()
 
 class PrinciplesListResponse(BaseModel):
     principles: list[Principle]
+
+class MeetingListItem(BaseModel):
+    id: str
+    title: str | None
+    scheduledAt: str | None
+    updatedAt: str | None
+    hasTranscript: bool
+    hasInterventions: bool
+
+
+class MeetingListResponse(BaseModel):
+    meetings: list[MeetingListItem]
+
+class MeetingFilesResponse(BaseModel):
+    id: str
+    preparation: str | None
+    transcript: str | None
+    interventions: str | None
+
+
+@app.get("/api/v1/meetings", response_model=MeetingListResponse)
+async def list_meetings():
+    storage = StorageService()
+    meetings = storage.list_meetings()
+    return MeetingListResponse(meetings=meetings)
+
+
+@app.get("/api/v1/meetings/{meeting_id}/files", response_model=MeetingFilesResponse)
+async def get_meeting_files(meeting_id: str):
+    storage = StorageService()
+    files = storage.get_meeting_files(meeting_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Meeting files not found")
+    return files
 
 
 @app.get("/api/v1/principles", response_model=PrinciplesListResponse)
@@ -475,6 +529,26 @@ async def create_principle(create: PrincipleCreate):
     return result
 
 
+@app.delete("/api/v1/principles/{principle_id}", status_code=204)
+async def delete_principle(principle_id: str):
+    """
+    Delete a principle by ID.
+
+    Args:
+        principle_id: The unique identifier of the principle
+
+    Raises:
+        404: If the principle is not found.
+    """
+    deleted = principles_service.delete_principle(principle_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Principle '{principle_id}' not found"
+        )
+    return Response(status_code=204)
+
+
 # ============================================================================
 # WebSocket Connection Manager
 # ============================================================================
@@ -527,7 +601,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     stt_service = RealtimeSTTService()
     speaker_service = SpeakerService()
     speaker_service.set_participants(state.participants)
-    triage_agent = TriageAgent()
+    safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
 
     async def on_transcript(text: str):
@@ -581,8 +655,14 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             )
 
     async def on_speech_end():
-        # 멀티에이전트 병렬 분석 (TriageAgent)
-        intervention = await triage_agent.analyze(state, state.transcript[-10:])
+        # 멀티에이전트 병렬 분석 (SafetyOrchestrator)
+        result = await safety_orchestrator.analyze(state, state.transcript[-10:])
+        intervention = result.intervention
+        if result.errors:
+            logger.warning(f"[{meeting_id}] Agent errors: {[e.error for e in result.errors]}")
+        if result.warnings:
+            logger.warning(f"[{meeting_id}] Safety warnings: {result.warnings}")
+
         if intervention:
             state.interventions.append(intervention)
             if intervention.parking_lot_item:
