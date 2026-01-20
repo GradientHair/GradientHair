@@ -3,6 +3,7 @@ import json
 from openai import OpenAI
 
 from models.meeting import Participant
+from services.model_router import ModelRouter
 
 
 class SpeakerService:
@@ -10,6 +11,7 @@ class SpeakerService:
         self.client = OpenAI()
         self.participants: list[Participant] = []
         self.recent_context: list[dict] = []
+        self.model = ModelRouter.select("fast", structured_output=True, api="chat").model
 
     def set_participants(self, participants: list[Participant]):
         self.participants = participants
@@ -44,7 +46,7 @@ JSON으로 응답:
 
         response = await asyncio.to_thread(
             self.client.chat.completions.create,
-            model="gpt-4o-mini",
+            model=self.model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
@@ -69,7 +71,7 @@ JSON으로 응답:
 """
         response = await asyncio.to_thread(
             self.client.chat.completions.create,
-            model="gpt-4o-mini",
+            model=self.model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )

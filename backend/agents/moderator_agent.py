@@ -10,11 +10,13 @@ from models.meeting import (
     Intervention,
     InterventionType,
 )
+from services.model_router import ModelRouter
 
 
 class ModeratorAgent:
     def __init__(self):
         self.client = OpenAI()
+        self.model = ModelRouter.select("reasoning", structured_output=True, api="chat").model
         self.last_intervention_time = 0
         self.min_intervention_interval = 20  # 최소 20초 간격
 
@@ -65,7 +67,7 @@ JSON 응답:
 
         response = await asyncio.to_thread(
             self.client.chat.completions.create,
-            model="gpt-4o",
+            model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"최근 대화:\n{transcript_text}"},
