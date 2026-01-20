@@ -50,14 +50,9 @@ def main() -> None:
     parser.add_argument("--agile-violation", type=float, default=0.1, help="애자일 위반 확률")
     parser.add_argument("--seed", type=int, default=None, help="랜덤 시드")
     parser.add_argument(
-        "--llm-only",
+        "--no-stream",
         action="store_true",
-        help="LLM 실모드만 사용 (OPENAI_API_KEY 필요)",
-    )
-    parser.add_argument(
-        "--stream",
-        action="store_true",
-        help="LLM 스트리밍 모드 사용",
+        help="LLM 비스트리밍 모드 사용",
     )
     args = parser.parse_args()
 
@@ -72,8 +67,7 @@ def main() -> None:
         recent_transcript=state.transcript,
         turns=args.turns,
         seed=args.seed,
-        require_llm=args.llm_only,
-        stream=args.stream,
+        stream=not args.no_stream,
     )
 
     rng = random.Random(args.seed)
