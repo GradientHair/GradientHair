@@ -654,7 +654,13 @@ class ConnectionManager:
 
     async def send_message(self, meeting_id: str, message: dict):
         if meeting_id in self.active_connections:
-            await self.active_connections[meeting_id].send_json(message)
+            try:
+                await self.active_connections[meeting_id].send_json(message)
+            except WebSocketDisconnect:
+                self.disconnect(meeting_id)
+            except Exception as e:
+                logger.error(f"Failed to send websocket message: {e}", exc_info=True)
+                self.disconnect(meeting_id)
 
 
 manager = ConnectionManager()
@@ -798,20 +804,23 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             if intervention.parking_lot_item:
                 state.parking_lot.append(intervention.parking_lot_item)
 
-            await manager.send_message(
-                meeting_id,
-                {
-                    "type": "intervention",
-                    "data": {
-                        "id": intervention.id,
-                        "type": intervention.intervention_type.value,
-                        "message": intervention.message,
-                        "timestamp": intervention.timestamp,
-                        "violatedPrinciple": intervention.violated_principle,
-                        "parkingLotItem": intervention.parking_lot_item,
+            try:
+                await manager.send_message(
+                    meeting_id,
+                    {
+                        "type": "intervention",
+                        "data": {
+                            "id": intervention.id,
+                            "type": intervention.intervention_type.value,
+                            "message": intervention.message,
+                            "timestamp": intervention.timestamp,
+                            "violatedPrinciple": intervention.violated_principle,
+                            "parkingLotItem": intervention.parking_lot_item,
+                        },
                     },
-                },
-            )
+                )
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to send intervention: {e}")
 
     # Error callback for STT service
     async def on_stt_error(error: Exception):
@@ -901,7 +910,13 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     logger.info(f"[{meeting_id}] Entering receive loop, waiting for audio...")
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+            except WebSocketDisconnect as e:
+                logger.info(
+                    f"WebSocket receive loop ended for meeting {meeting_id} (code={getattr(e, 'code', 'unknown')})"
+                )
+                break
             message_type = data.get("type")
             if message_type == "participants":
                 raw_participants = data.get("data", [])
