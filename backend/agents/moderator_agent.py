@@ -11,6 +11,7 @@ from models.meeting import (
     InterventionType,
 )
 from services.model_router import ModelRouter
+from i18n import pick
 
 
 class ModeratorAgent:
@@ -35,7 +36,8 @@ class ModeratorAgent:
         speaker_stats = self._calculate_speaker_stats(state)
 
         # GPT-4o로 분석
-        system_prompt = f"""당신은 회의 모더레이터 AI입니다.
+        system_prompt = pick(
+            f"""당신은 회의 모더레이터 AI입니다.
 아젠다: {state.agenda}
 회의 원칙: {json.dumps([p.get('name', '') for p in state.principles], ensure_ascii=False)}
 참석자: {json.dumps([p.name for p in state.participants], ensure_ascii=False)}
@@ -45,21 +47,47 @@ class ModeratorAgent:
 직접적이고 용기있게 개입하세요.
 
 개입 유형:
-- TOPIC_DRIFT: 주제 이탈 (예: "잠깐요, 아젠다에서 벗어났어요.")
-- PRINCIPLE_VIOLATION: 원칙 위반 (예: "멈춰주세요! 원칙 위반입니다.")
-- PARTICIPATION_IMBALANCE: 발언 불균형 (예: "잠깐요! OO님 아직 발언 안 하셨어요.")
-- DECISION_STYLE: Top-down 결정 (예: "멈춰주세요! 혼자 결정하시면 안 돼요.")
+- TOPIC_DRIFT: 주제 이탈 (예: \"잠깐요, 아젠다에서 벗어났어요.\")
+- PRINCIPLE_VIOLATION: 원칙 위반 (예: \"멈춰주세요! 원칙 위반입니다.\")
+- PARTICIPATION_IMBALANCE: 발언 불균형 (예: \"잠깐요! OO님 아직 발언 안 하셨어요.\")
+- DECISION_STYLE: Top-down 결정 (예: \"멈춰주세요! 혼자 결정하시면 안 돼요.\")
 
 JSON 응답:
 {{
-  "needs_intervention": true/false,
-  "intervention_type": "TOPIC_DRIFT" | "PRINCIPLE_VIOLATION" | "PARTICIPATION_IMBALANCE" | "DECISION_STYLE" | null,
-  "message": "개입 메시지 (한국어, 직접적인 톤)",
-  "violated_principle": "위반 원칙명" | null,
-  "parking_lot_item": "Parking Lot 항목" | null,
-  "suggested_speaker": "발언 권유할 참석자" | null
+  \"needs_intervention\": true/false,
+  \"intervention_type\": \"TOPIC_DRIFT\" | \"PRINCIPLE_VIOLATION\" | \"PARTICIPATION_IMBALANCE\" | \"DECISION_STYLE\" | null,
+  \"message\": \"개입 메시지 (한국어, 직접적인 톤)\",
+  \"violated_principle\": \"위반 원칙명\" | null,
+  \"parking_lot_item\": \"Parking Lot 항목\" | null,
+  \"suggested_speaker\": \"발언 권유할 참석자\" | null
 }}
-"""
+""",
+            f"""You are a meeting moderator AI.
+Agenda: {state.agenda}
+Principles: {json.dumps([p.get('name', '') for p in state.principles], ensure_ascii=False)}
+Participants: {json.dumps([p.name for p in state.participants], ensure_ascii=False)}
+Speaking stats: {json.dumps(speaker_stats, ensure_ascii=False)}
+
+Analyze recent conversation and decide whether an intervention is needed.
+Be direct and confident.
+
+Intervention types:
+- TOPIC_DRIFT: off-topic (e.g., \"Hold on, we're off the agenda.\")
+- PRINCIPLE_VIOLATION: principle violation (e.g., \"Pause! That's a principle violation.\")
+- PARTICIPATION_IMBALANCE: participation imbalance (e.g., \"Quick check-in: someone hasn't spoken yet.\")
+- DECISION_STYLE: top-down decision (e.g., \"Pause! We shouldn't decide unilaterally.\")
+
+Respond as JSON:
+{{
+  \"needs_intervention\": true/false,
+  \"intervention_type\": \"TOPIC_DRIFT\" | \"PRINCIPLE_VIOLATION\" | \"PARTICIPATION_IMBALANCE\" | \"DECISION_STYLE\" | null,
+  \"message\": \"Intervention message (English, direct tone)\",
+  \"violated_principle\": \"violated principle name\" | null,
+  \"parking_lot_item\": \"parking lot item\" | null,
+  \"suggested_speaker\": \"participant to invite\" | null
+}}
+""",
+        )
 
         transcript_text = "\n".join(
             [f"{t.speaker}: {t.text}" for t in recent_transcript[-10:]]
@@ -70,7 +98,7 @@ JSON 응답:
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"최근 대화:\n{transcript_text}"},
+                {"role": "user", "content": pick(f"최근 대화:\n{transcript_text}", f"Recent conversation:\n{transcript_text}")},
             ],
             response_format={"type": "json_object"},
         )

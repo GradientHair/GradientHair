@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getApiBase } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isEnglish, t } from "@/lib/i18n";
 
 type Principle = {
   id: string;
@@ -32,12 +33,60 @@ type Principle = {
   source: "preset" | "custom";
 };
 
-const defaultPrinciples: Principle[] = [
-  {
-    id: "agile",
-    name: "Agile 원칙",
-    source: "preset",
-    content: `# Agile Meeting Principles
+const defaultPrinciples: Principle[] = isEnglish
+  ? [
+      {
+        id: "agile",
+        name: "Agile principles",
+        source: "preset",
+        content: `# Agile Meeting Principles
+
+1. **Shared decisions**
+   Respect every participant's input equally.
+
+2. **Timebox**
+   Finish discussions within the allotted time.
+
+3. **Action-oriented**
+   Turn every discussion into an action item.
+
+4. **Short and focused**
+   Minimize unnecessary comments.
+
+5. **Transparency**
+   Share information openly.`,
+      },
+      {
+        id: "aws-leadership",
+        name: "AWS Leadership",
+        source: "preset",
+        content: `# AWS Leadership Principles for Meetings
+
+1. **Customer Obsession**
+   Discuss from the customer point of view.
+
+2. **Ownership**
+   Share accountable opinions.
+
+3. **Disagree and Commit**
+   Voice disagreement, then commit.
+
+4. **Have Backbone; Disagree**
+   Push back respectfully when you disagree.
+
+5. **Dive Deep**
+   Understand details thoroughly.
+
+6. **Bias for Action**
+   Decide and act quickly.`,
+      },
+    ]
+  : [
+      {
+        id: "agile",
+        name: "Agile 원칙",
+        source: "preset",
+        content: `# Agile Meeting Principles
 
 1. **수평적 의사결정**
    모든 참석자의 의견을 동등하게 존중합니다.
@@ -53,12 +102,12 @@ const defaultPrinciples: Principle[] = [
 
 5. **투명성**
    정보 공유에 숨김이 없습니다.`,
-  },
-  {
-    id: "aws-leadership",
-    name: "AWS Leadership",
-    source: "preset",
-    content: `# AWS Leadership Principles for Meetings
+      },
+      {
+        id: "aws-leadership",
+        name: "AWS Leadership",
+        source: "preset",
+        content: `# AWS Leadership Principles for Meetings
 
 1. **Customer Obsession**
    고객 관점에서 논의합니다.
@@ -77,12 +126,24 @@ const defaultPrinciples: Principle[] = [
 
 6. **Bias for Action**
    빠른 결정, 실행 우선으로 진행합니다.`,
-  },
-];
+      },
+    ];
 
 const presetIds = new Set(["agile", "aws-leadership"]);
 
-const buildTemplate = (name: string) => `# ${name}
+const buildTemplate = (name: string) =>
+  isEnglish
+    ? `# ${name}
+
+1. **Core principles**
+   Summarize in one sentence.
+
+2. **Behavior rules**
+   Describe meeting behaviors to follow.
+
+3. **Feedback approach**
+   Note how to discuss issues when they arise.`
+    : `# ${name}
 
 1. **핵심 원칙**
    한 문장으로 요약합니다.
@@ -224,7 +285,7 @@ export default function PrinciplesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("이 원칙을 삭제할까요?")) return;
+    if (!window.confirm(t("principles.deleteConfirm"))) return;
     try {
       const response = await fetch(`${apiBase}/principles/${id}`, {
         method: "DELETE",
@@ -258,44 +319,44 @@ export default function PrinciplesPage() {
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2">
-              <CardTitle className="text-2xl">회의 원칙 관리</CardTitle>
+              <CardTitle className="text-2xl">{t("principles.title")}</CardTitle>
               <CardDescription className="text-sm">
-                회의가 흐트러지지 않도록 팀의 합의된 기준을 정리하고 공유하세요.
+                {t("principles.subtitle")}
               </CardDescription>
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="secondary">총 {principles.length}개</Badge>
-                <span>기본 {presetCount} · 커스텀 {customCount}</span>
+                <Badge variant="secondary">{t("principles.total", { count: principles.length })}</Badge>
+                <span>{t("principles.presetCustom", { preset: presetCount, custom: customCount })}</span>
               </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="w-full sm:w-auto" disabled={isLoading}>
-                    새 원칙 추가
+                    {t("principles.add")}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>새 원칙 추가</DialogTitle>
+                    <DialogTitle>{t("principles.addTitle")}</DialogTitle>
                     <DialogDescription>
-                      팀 이름에 맞는 원칙 이름과 초안을 적어두면 빠르게 시작할 수 있어요.
+                      {t("principles.addDesc")}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">원칙 이름</label>
+                      <label className="text-sm font-medium">{t("principles.nameLabel")}</label>
                       <Input
                         value={draftName}
                         onChange={(e) => setDraftName(e.target.value)}
-                        placeholder="예: 디자인 스프린트 원칙"
+                        placeholder={t("principles.namePlaceholder")}
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">초안 내용</label>
+                      <label className="text-sm font-medium">{t("principles.contentLabel")}</label>
                       <Textarea
                         value={draftContent}
                         onChange={(e) => setDraftContent(e.target.value)}
-                        placeholder="# 원칙 제목\n\n1. ..."
+                        placeholder={t("principles.contentPlaceholder")}
                         rows={8}
                         className="font-mono text-sm"
                       />
@@ -306,7 +367,7 @@ export default function PrinciplesPage() {
                       onClick={handleAdd}
                       disabled={draftName.trim().length === 0}
                     >
-                      추가하기
+                      {t("principles.addAction")}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -331,7 +392,7 @@ export default function PrinciplesPage() {
                     variant="outline"
                     className="ml-1 border-muted-foreground/30 text-muted-foreground"
                   >
-                    {principle.source === "preset" ? "기본" : "커스텀"}
+                    {principle.source === "preset" ? t("principles.sourcePreset") : t("principles.sourceCustom")}
                   </Badge>
                 </TabsTrigger>
               ))}
@@ -348,15 +409,15 @@ export default function PrinciplesPage() {
               <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
                 <Card className="border-none bg-muted/30 shadow-none">
                   <CardHeader>
-                    <CardTitle className="text-lg">작성 가이드</CardTitle>
+                    <CardTitle className="text-lg">{t("principles.guideTitle")}</CardTitle>
                     <CardDescription>
-                      Markdown 형식으로 작성하면 팀원들이 읽기 쉬워요.
+                      {t("principles.guideMarkdown")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm text-muted-foreground">
-                    <div>핵심 원칙은 3~6개로 간결하게 정리하세요.</div>
-                    <div>행동 기준은 동사로 시작하면 명확해집니다.</div>
-                    <div>갈등 해결 방식을 한 줄로 추가하세요.</div>
+                    <div>{t("principles.guideCore")}</div>
+                    <div>{t("principles.guideActions")}</div>
+                    <div>{t("principles.guideConflict")}</div>
                   </CardContent>
                 </Card>
                 <Card>
@@ -365,7 +426,7 @@ export default function PrinciplesPage() {
                       <div className="space-y-1">
                         <CardTitle>{principle.name}</CardTitle>
                         <CardDescription>
-                          팀이 공유할 원칙 문서를 자유롭게 편집하세요.
+                          {t("principles.editorHint")}
                         </CardDescription>
                       </div>
                       <Button
@@ -374,7 +435,7 @@ export default function PrinciplesPage() {
                         onClick={() => handleDelete(principle.id)}
                         disabled={!canDelete}
                       >
-                        삭제
+                        {t("common.delete")}
                       </Button>
                     </div>
                   </CardHeader>
@@ -400,13 +461,13 @@ export default function PrinciplesPage() {
                       onClick={() => handleCancel(principle.id)}
                       disabled={!isDirty}
                     >
-                      취소
+                      {t("common.cancel")}
                     </Button>
                     <Button
                       onClick={() => handleSave(principle.id)}
                       disabled={!isDirty}
                     >
-                      {savedId === principle.id ? "저장됨" : "저장"}
+                      {savedId === principle.id ? t("common.saved") : t("common.save")}
                     </Button>
                   </CardFooter>
                 </Card>

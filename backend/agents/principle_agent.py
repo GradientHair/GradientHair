@@ -11,6 +11,7 @@ from models.meeting import MeetingState, TranscriptEntry
 from services.principles_service import PrinciplesService
 from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
 from services.model_router import ModelRouter
+from i18n import pick, is_english
 
 
 class PrincipleViolationResponse(BaseModel):
@@ -54,7 +55,8 @@ class PrincipleAgent(BaseAgent):
 
         principles_text = "\n".join(self._build_principles_text(state))
 
-        prompt = f"""당신은 회의 원칙 준수를 감시하는 전문가입니다.
+        prompt = pick(
+            f"""당신은 회의 원칙 준수를 감시하는 전문가입니다.
 
 회의 원칙:
 {principles_text}
@@ -75,7 +77,30 @@ JSON 응답:
   "violated_principle": "위반된 원칙명 (위반 시)",
   "violation_reason": "위반 이유 (위반 시)"
 }}
-"""
+""",
+            f"""You are an expert monitoring whether meeting principles are being followed.
+
+Meeting principles:
+{principles_text}
+
+Recent conversation:
+{transcript_text}
+
+Decide whether there is a principle violation.
+Examples:
+- \"Shared decision-making\" violation: making unilateral decisions without input
+- \"Timebox\" violation: ignoring time management
+- \"Disagree and Commit\" violation: accepting without dissent
+
+Respond as JSON:
+{{
+  \"is_violation\": true/false,
+  \"confidence\": 0.0-1.0,
+  \"violated_principle\": \"violated principle name (if violation)\",
+  \"violation_reason\": \"reason (if violation)\"
+}}
+""",
+        )
 
         if self.client is None:
             return self._fallback_analysis(state, recent_transcript)
@@ -87,12 +112,15 @@ JSON 응답:
             return self._fallback_analysis(state, recent_transcript)
 
         if parsed.is_violation and parsed.confidence > 0.7:
-            violated = parsed.violated_principle or "회의 원칙"
+            violated = parsed.violated_principle or pick("회의 원칙", "Meeting principles")
             return AnalysisResult(
                 agent_name=self.name,
                 needs_intervention=True,
                 intervention_type="PRINCIPLE_VIOLATION",
-                message=f"멈춰주세요! '{violated}' 원칙 위반입니다. 다른 분들 의견은 어떠세요?",
+                message=pick(
+                    f"멈춰주세요! '{violated}' 원칙 위반입니다. 다른 분들 의견은 어떠세요?",
+                    f"Pause! That violates the '{violated}' principle. What do others think?",
+                ),
                 confidence=parsed.confidence,
                 violated_principle=violated,
             )
@@ -124,15 +152,22 @@ JSON 응답:
     ) -> AnalysisResult:
         # Heuristic: if meeting has repeated unilateral decision phrases
         recent_text = " ".join(t.text for t in recent_transcript[-3:])
-        keywords = ["결정", "그냥", "바로 하자", "내가 할게", "따라"]
+        keywords = (
+            ["decide", "I'm deciding", "we'll do this", "just do it", "follow me"]
+            if is_english()
+            else ["결정", "그냥", "바로 하자", "내가 할게", "따라"]
+        )
         if any(k in recent_text for k in keywords):
             return AnalysisResult(
                 agent_name=self.name,
                 needs_intervention=True,
                 intervention_type="PRINCIPLE_VIOLATION",
-                message="멈춰주세요! 원칙 위반 가능성이 있어요. 다른 분들 의견을 들어보죠.",
+                message=pick(
+                    "멈춰주세요! 원칙 위반 가능성이 있어요. 다른 분들 의견을 들어보죠.",
+                    "Pause! This may violate our principles. Let's hear from others.",
+                ),
                 confidence=0.6,
-                violated_principle="회의 원칙",
+                violated_principle=pick("회의 원칙", "Meeting principles"),
             )
         return AnalysisResult(agent_name=self.name, needs_intervention=False)
 

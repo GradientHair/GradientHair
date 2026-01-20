@@ -14,6 +14,7 @@ from websockets.exceptions import (
     InvalidStatusCode,
     WebSocketException,
 )
+from i18n import default_stt_language
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -211,7 +212,7 @@ class RealtimeSTTService:
                     "input_audio_format": "pcm16",
                     "input_audio_transcription": {
                         "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
-                        "language": os.getenv("REALTIME_TRANSCRIBE_LANGUAGE", "ko"),
+                        "language": os.getenv("REALTIME_TRANSCRIBE_LANGUAGE", default_stt_language()),
                     },
                     "turn_detection": {
                         "type": "server_vad",

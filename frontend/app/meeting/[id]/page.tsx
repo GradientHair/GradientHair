@@ -11,6 +11,7 @@ import { InterventionToast } from "@/components/intervention-toast";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAudioCapture } from "@/hooks/use-audio-capture";
 import { getApiBase } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 export default function MeetingRoomPage() {
   const params = useParams();
@@ -153,7 +154,7 @@ export default function MeetingRoomPage() {
 
   const startAgentMode = () => {
     if (participants.length === 0) {
-      console.warn("참석자가 없으면 에이전트 모드를 시작할 수 없습니다.");
+      console.warn(t("meeting.participantsMissing"));
       return;
     }
     const sent = sendAgentModeCommand("start", {
@@ -222,7 +223,7 @@ export default function MeetingRoomPage() {
             </span>
             <span>{formatTime(elapsedTime)}</span>
             <span className={isConnected ? "text-green-600" : isAgentMode ? "text-blue-600" : "text-yellow-600"}>
-              {isConnected ? "연결됨" : isAgentMode ? "에이전트 모드" : "오프라인"}
+              {isConnected ? t("meeting.status.connected") : isAgentMode ? t("meeting.status.agent") : t("meeting.status.offline")}
             </span>
           </div>
         </div>
@@ -233,7 +234,7 @@ export default function MeetingRoomPage() {
         <div className="col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>실시간 자막</CardTitle>
+              <CardTitle>{t("meeting.liveTranscript")}</CardTitle>
             </CardHeader>
             <CardContent>
               <TranscriptView />
@@ -245,7 +246,7 @@ export default function MeetingRoomPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>발언 통계</CardTitle>
+              <CardTitle>{t("meeting.speakerStats")}</CardTitle>
             </CardHeader>
             <CardContent>
               <SpeakerStats />
@@ -254,10 +255,10 @@ export default function MeetingRoomPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>현재 아젠다</CardTitle>
+              <CardTitle>{t("meeting.currentAgenda")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-sm whitespace-pre-wrap">{agenda || "아젠다가 설정되지 않았습니다."}</div>
+              <div className="text-sm whitespace-pre-wrap">{agenda || t("meeting.agendaEmpty")}</div>
             </CardContent>
           </Card>
         </div>
@@ -265,9 +266,9 @@ export default function MeetingRoomPage() {
 
       {/* 컨트롤 버튼 */}
       <div className="flex justify-center gap-4 mt-6">
-        {!isAgentMeeting && (
+            {!isAgentMeeting && (
           <Button variant="outline" onClick={handleMuteToggle}>
-            {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
+            {!isRecording ? t("meeting.audioStart") : isMuted ? t("meeting.unmute") : t("meeting.mute")}
           </Button>
         )}
         {isAgentMeeting && (
@@ -275,11 +276,11 @@ export default function MeetingRoomPage() {
             variant={isAgentMode ? "destructive" : "outline"}
             onClick={isAgentMode ? stopAgentMode : startAgentMode}
           >
-            {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
+            {isAgentMode ? t("meeting.stopAgent") : t("meeting.agentMode")}
           </Button>
         )}
         <Button variant="destructive" onClick={handleEndMeeting}>
-          회의 종료
+          {t("meeting.end")}
         </Button>
       </div>
 

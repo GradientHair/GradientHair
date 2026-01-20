@@ -14,18 +14,33 @@ from pydantic import BaseModel, Field
 
 from models.meeting import MeetingState, TranscriptEntry
 from services.model_router import ModelRouter
+from i18n import pick, is_english
 
 
-PERSONA_POOL = (
-    "백엔드 엔지니어",
-    "프론트 엔지니어",
-    "UI/UX 엔지니어",
-)
+PERSONA_POOL = {
+    "ko": (
+        "백엔드 엔지니어",
+        "프론트 엔지니어",
+        "UI/UX 엔지니어",
+    ),
+    "en": (
+        "Backend engineer",
+        "Frontend engineer",
+        "UI/UX engineer",
+    ),
+}
 
 PERSONA_GUIDES = {
-    "백엔드 엔지니어": "API 설계, 데이터 모델, 성능/확장성, 로그/모니터링에 초점을 맞춘다.",
-    "프론트 엔지니어": "화면 플로우, 상태관리, 컴포넌트 구조, 사용자 입력 처리에 집중한다.",
-    "UI/UX 엔지니어": "사용자 여정, 정보 구조, 접근성, 피드백 루프를 강조한다.",
+    "ko": {
+        "백엔드 엔지니어": "API 설계, 데이터 모델, 성능/확장성, 로그/모니터링에 초점을 맞춘다.",
+        "프론트 엔지니어": "화면 플로우, 상태관리, 컴포넌트 구조, 사용자 입력 처리에 집중한다.",
+        "UI/UX 엔지니어": "사용자 여정, 정보 구조, 접근성, 피드백 루프를 강조한다.",
+    },
+    "en": {
+        "Backend engineer": "Focus on API design, data models, scalability/performance, and logging/monitoring.",
+        "Frontend engineer": "Focus on user flows, state management, component structure, and input handling.",
+        "UI/UX engineer": "Emphasize user journey, information architecture, accessibility, and feedback loops.",
+    },
 }
 
 
@@ -78,7 +93,8 @@ class PersonaDialogueAgent:
             p_key = participant.id or participant.name
             persona = existing.get(p_key)
             if not persona:
-                persona = rng.choice(PERSONA_POOL)
+                pool = PERSONA_POOL["en"] if is_english() else PERSONA_POOL["ko"]
+                persona = rng.choice(pool)
                 existing[p_key] = persona
             assignments.append(
                 PersonaAssignment(
@@ -184,18 +200,20 @@ class PersonaDialogueAgent:
         recent_transcript: list[TranscriptEntry],
         planned_turn: PersonaDialogueTurn,
     ) -> str:
-        agenda = state.agenda or "아젠다 없음"
+        agenda = state.agenda or pick("아젠다 없음", "No agenda")
         recent_text = (
             "\n".join(f"{t.speaker}: {t.text}" for t in recent_transcript[-8:])
-            or "최근 대화 없음"
+            or pick("최근 대화 없음", "No recent conversation")
         )
         assignments = self.assign_personas(state)
+        guides = PERSONA_GUIDES["en"] if is_english() else PERSONA_GUIDES["ko"]
         persona_lines = "\n".join(
-            f"- {a.name} ({a.role}): {a.persona} — {PERSONA_GUIDES.get(a.persona, '')}"
+            f"- {a.name} ({a.role}): {a.persona} — {guides.get(a.persona, '')}"
             for a in assignments
         )
 
-        return f"""당신은 회의 발언을 생성하는 어시스턴트입니다.
+        return pick(
+            f"""당신은 회의 발언을 생성하는 어시스턴트입니다.
 참석자에게 페르소나를 부여한 뒤, 회의 내용을 바탕으로 업무 수행 방안을 논의하는 대화를 만듭니다.
 
 아젠다:
@@ -227,7 +245,41 @@ class PersonaDialogueAgent:
 출력 형식:
 - 스피커 이름이나 따옴표 없이 한글 대화문 **한 문단**만 반환합니다.
 - 예시: 그러면 이번 스프린트에 API 응답 캐싱부터 적용해보고, 로그 지표는 제가 정리할게요.
-"""
+""",
+            f"""You are an assistant generating meeting utterances.
+Assign personas to participants and create dialogue that discusses how to execute work based on the meeting agenda.
+
+Agenda:
+{agenda}
+
+Recent conversation:
+{recent_text}
+
+Personas:
+{persona_lines}
+
+Next speaker info:
+- speaker: {planned_turn.speaker}
+- off_topic: {planned_turn.is_off_topic}
+- agile_violation: {planned_turn.is_agile_violation}
+
+Rules:
+- Generate **only one** utterance for {planned_turn.speaker}.
+- If off_topic=true, include light chatter unrelated to the agenda.
+- If agile_violation=true, include language where the speaker pushes their own viewpoint.
+- Otherwise, follow the agenda and **naturally continue the recent conversation** about how to execute the work.
+- Build on the immediate prior statement with specific details.
+- Avoid repeating the same sentences or similar phrasing.
+- Write in natural, realistic spoken English.
+- Keep it concise: 1–2 sentences in conversational tone (no lists).
+- Do not use any brackets: (), [], {}, <>.
+- Do not mention the speaker name or flags in the utterance.
+
+Output format:
+- Return a single paragraph of plain English dialogue with no speaker name or quotes.
+- Example: Then let's start by adding API response caching this sprint, and I'll draft the logging metrics.
+""",
+        )
 
     def _generate_utterance_text(
         self,

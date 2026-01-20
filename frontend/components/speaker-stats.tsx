@@ -2,6 +2,7 @@
 
 import { Progress } from "@/components/ui/progress";
 import { useMeetingStore } from "@/store/meeting-store";
+import { t } from "@/lib/i18n";
 
 export function SpeakerStats() {
   const { speakerStats, participants } = useMeetingStore();
@@ -20,14 +21,17 @@ export function SpeakerStats() {
                 {p.name}
               </span>
               <span className="text-gray-500">
-                {stats.percentage}% ({stats.count}회)
+                {t("speakerStats.percentageCount", {
+                  percentage: stats.percentage,
+                  count: stats.count,
+                })}
               </span>
             </div>
             <Progress
               value={stats.percentage}
               className={isLow ? "bg-orange-100" : isHigh ? "bg-red-100" : ""}
             />
-            {isLow && <span className="text-xs text-orange-600">참여 불균형</span>}
+            {isLow && <span className="text-xs text-orange-600">{t("speakerStats.imbalance")}</span>}
           </div>
         );
       })}

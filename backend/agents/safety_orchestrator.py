@@ -19,6 +19,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
 from services.model_router import ModelRouter
+from i18n import pick, is_english
 
 
 @dataclass
@@ -80,7 +81,7 @@ class CrashDetectionAgent:
 
     def analyze(self, errors: list[AgentError]) -> list[str]:
         if len(errors) >= self.max_errors:
-            return ["에이전트 오류가 반복되어 자동 복구 절차를 실행합니다."]
+            return [pick("에이전트 오류가 반복되어 자동 복구 절차를 실행합니다.", "Repeated agent errors detected. Running automatic recovery.")]
         return []
 
 
@@ -134,7 +135,8 @@ class SafetyCheckAgent:
         if self.runner is None:
             return SafetyCheckResponse(is_safe=True)
 
-        prompt = f"""당신은 회의 어시스턴트의 안전 검토자입니다.
+        prompt = pick(
+            f"""당신은 회의 어시스턴트의 안전 검토자입니다.
 메시지가 안전한지 판단하고, 안전하지 않다면 대체 메시지를 제안하세요.
 
 메시지:
@@ -146,13 +148,30 @@ JSON 응답:
   "safe_message": "안전한 대체 메시지 (필요 시)",
   "reasons": ["이유1", "이유2"]
 }}
-"""
+""",
+            f"""You are a safety reviewer for a meeting assistant.
+Determine whether the message is safe, and if not, suggest a safer alternative.
+
+Message:
+{message}
+
+Respond as JSON:
+{{
+  "is_safe": true/false,
+  "safe_message": "safe alternative message (if needed)",
+  "reasons": ["reason 1", "reason 2"]
+}}
+""",
+        )
 
         parsed = await asyncio.to_thread(self.runner.run, prompt)
         if parsed is None:
             return SafetyCheckResponse(
                 is_safe=False,
-                safe_message="안전 정책 위반 가능성이 있어 메시지를 조정합니다.",
+                safe_message=pick(
+                    "안전 정책 위반 가능성이 있어 메시지를 조정합니다.",
+                    "Adjusting the message due to a potential safety policy violation.",
+                ),
                 reasons=["fallback"],
             )
         return parsed
@@ -176,18 +195,28 @@ class SafetyVerifierAgent:
         message = intervention.message or ""
         verdict = await self.safety_check_agent.check(message)
         if not verdict.is_safe:
-            intervention.message = verdict.safe_message or "안전 정책 위반 가능성이 있어 메시지를 조정합니다."
+            intervention.message = verdict.safe_message or pick(
+                "안전 정책 위반 가능성이 있어 메시지를 조정합니다.",
+                "Adjusting the message due to a potential safety policy violation.",
+            )
             intervention.intervention_type = InterventionType.DECISION_STYLE
             message = intervention.message
         if self._is_unsafe(message):
-            intervention.message = "대화가 안전 기준을 벗어날 수 있어 잠시 정리할게요."
+            intervention.message = pick(
+                "대화가 안전 기준을 벗어날 수 있어 잠시 정리할게요.",
+                "Let's pause and refocus to keep the conversation within safety guidelines.",
+            )
             intervention.intervention_type = InterventionType.DECISION_STYLE
         if len(intervention.message) > self.max_length:
             intervention.message = intervention.message[: self.max_length].rstrip() + "…"
         return intervention
 
     def _is_unsafe(self, message: str) -> bool:
-        unsafe_keywords = ["불법", "혐오", "폭력", "차별"]
+        unsafe_keywords = (
+            ["illegal", "hate", "violence", "discrimination"]
+            if is_english()
+            else ["불법", "혐오", "폭력", "차별"]
+        )
         return any(k in message for k in unsafe_keywords)
 
 
@@ -199,12 +228,12 @@ class AdversarialReviewerAgent:
 
     def review(self, intervention: Intervention) -> tuple[bool, str]:
         if not intervention.message:
-            return False, "개입 메시지가 비어 있습니다."
+            return False, pick("개입 메시지가 비어 있습니다.", "Intervention message is empty.")
         if "source:" not in intervention.trigger_context:
-            return False, "출처 정보가 없습니다."
+            return False, pick("출처 정보가 없습니다.", "Source information is missing.")
         if len(intervention.message) < 6:
-            return False, "메시지가 너무 짧습니다."
-        return True, "승인"
+            return False, pick("메시지가 너무 짧습니다.", "Message is too short.")
+        return True, pick("승인", "Approved")
 
 
 class GroupChatCoordinator:
@@ -212,9 +241,9 @@ class GroupChatCoordinator:
 
     def summarize(self, results: list[AnalysisResult]) -> str:
         if not results:
-            return "요약: 개입 필요 없음."
+            return pick("요약: 개입 필요 없음.", "Summary: no intervention needed.")
         notes = [f"{r.agent_name}:{r.intervention_type}" for r in results if r.needs_intervention]
-        return "요약: " + ", ".join(notes)
+        return pick("요약: ", "Summary: ") + ", ".join(notes)
 
 
 class PlannerAgent:
@@ -300,7 +329,10 @@ class SafetyOrchestrator:
         if intervention:
             approved, note = self.adversary.review(intervention)
             if not approved:
-                intervention.message = f"검증 실패로 개입을 보류합니다. ({note})"
+                intervention.message = pick(
+                    f"검증 실패로 개입을 보류합니다. ({note})",
+                    f"Intervention withheld due to verification failure. ({note})",
+                )
                 intervention.intervention_type = InterventionType.DECISION_STYLE
         if intervention:
             self.last_intervention_time = current_time

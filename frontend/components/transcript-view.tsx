@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useMeetingStore } from "@/store/meeting-store";
+import { formatTime, t } from "@/lib/i18n";
 
 export function TranscriptView() {
   const { transcript, interventions, transcriptStream } = useMeetingStore();
@@ -28,15 +29,11 @@ export function TranscriptView() {
   return (
     <div className="h-[400px] overflow-y-auto bg-white rounded-lg border p-4 space-y-3">
       {avgLatency !== null && (
-        <div className="text-xs text-gray-500">최근 전사 지연: {avgLatency}ms (최근 10개 평균)</div>
+        <div className="text-xs text-gray-500">{t("transcript.avgLatency", { latency: avgLatency })}</div>
       )}
       {allItems.map((item) => {
         if (item.itemType === "transcript") {
-          const time = new Date(item.timestamp).toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          });
+          const time = formatTime(item.timestamp);
           return (
             <div key={item.id} className="text-sm">
               <span className="text-gray-500">[{time}]</span>{" "}
@@ -60,7 +57,7 @@ export function TranscriptView() {
       {transcriptStream && transcriptStream.text && (
         <div className="text-sm italic text-gray-600">
           <span className="text-gray-500">
-            [{new Date(transcriptStream.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}]
+            [{formatTime(transcriptStream.timestamp)}]
           </span>{" "}
           <span className="font-semibold">{transcriptStream.speaker}:</span>{" "}
           <span>{transcriptStream.text}</span>

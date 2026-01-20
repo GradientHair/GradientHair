@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiBase } from "@/lib/api";
 import { useMeetingStore } from "@/store/meeting-store";
+import { formatDateTime, t } from "@/lib/i18n";
 
 type PastMeeting = {
   id: string;
@@ -29,18 +30,7 @@ type PastMeeting = {
   hasInterventions?: boolean;
 };
 
-const formatMeetingDate = (value?: string | null) => {
-  if (!value) return "날짜 정보 없음";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
+const formatMeetingDate = (value?: string | null) => formatDateTime(value);
 
 export default function MeetingPrepPage() {
   const router = useRouter();
@@ -63,7 +53,7 @@ export default function MeetingPrepPage() {
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [principles, setPrinciples] = useState<Array<{ id: string; name: string }>>([
-    { id: "agile", name: "Agile 원칙" },
+    { id: "agile", name: t("home.defaultAgilePrinciples") },
     { id: "aws-leadership", name: "AWS Leadership Principles" },
   ]);
   const [pastMeetings, setPastMeetings] = useState<PastMeeting[]>([]);
@@ -115,7 +105,7 @@ export default function MeetingPrepPage() {
         }
       } catch {
         if (isMounted) {
-          setPastMeetingsError("지난 회의를 불러오지 못했어요.");
+          setPastMeetingsError(t("home.pastMeetingsError"));
         }
       } finally {
         if (isMounted) {
@@ -203,21 +193,22 @@ export default function MeetingPrepPage() {
     const agendaLines: string[] = [];
     const parsedParticipants: { id: string; name: string; role: string }[] = [];
     const participantKeys = new Set<string>();
-    const roleKeywords = new Set([
-      "주최자",
-      "참석자",
-      "필수 참석자",
-      "선택 참석자",
-      "Organizer",
-      "Host",
-    ]);
-    const statusKeywords = new Set(["한가함", "바쁨", "미정"]);
-    const ignoreAgendaKeywords = [
-      "참석자",
-      "초대",
-      "회신",
-      "수락",
-    ];
+    const roleKeywords = new Set(
+      t("home.calendarRoles")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+    const statusKeywords = new Set(
+      t("home.calendarStatusKeywords")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+    const ignoreAgendaKeywords = t("home.calendarIgnoreKeywords")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
 
     const isDateLine = (line: string) =>
       /(\bAM\b|\bPM\b|\d{1,2}:\d{2}|월|일|\bJan\b|\bFeb\b|\bMar\b|\bApr\b|\bMay\b|\bJun\b|\bJul\b|\bAug\b|\bSep\b|\bOct\b|\bNov\b|\bDec\b)/i.test(
@@ -225,11 +216,11 @@ export default function MeetingPrepPage() {
       );
 
     const isLikelyName = (line: string) => {
-      if (line.includes("안녕하세요")) return false;
+      if (line.toLowerCase().includes(t("home.calendarIgnoreGreeting").toLowerCase())) return false;
       if (line.includes("@")) return false;
       if (/[0-9]/.test(line)) return false;
-      if (line.includes("명")) return false;
-      if (line.includes("초대") || line.includes("회신") || line.includes("수락")) return false;
+      if (line.toLowerCase().includes(t("home.calendarIgnoreGuests").toLowerCase())) return false;
+      if (ignoreAgendaKeywords.some((keyword) => line.includes(keyword))) return false;
       if (line.length > 40) return false;
       return /[A-Za-z가-힣]/.test(line);
     };
@@ -332,8 +323,8 @@ export default function MeetingPrepPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <Tabs defaultValue="prepare" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="prepare">새 회의</TabsTrigger>
-          <TabsTrigger value="history">지난 회의</TabsTrigger>
+          <TabsTrigger value="prepare">{t("home.tab.prepare")}</TabsTrigger>
+          <TabsTrigger value="history">{t("home.tab.history")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="prepare" className="space-y-6">
@@ -341,36 +332,36 @@ export default function MeetingPrepPage() {
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-2">
-                  <CardTitle className="text-2xl">회의 준비</CardTitle>
+                  <CardTitle className="text-2xl">{t("home.title")}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    회의 제목과 참석자, 원칙을 미리 정리해 생산적인 논의를 시작하세요.
+                    {t("home.subtitle")}
                   </p>
                 </div>
                 <Dialog open={pasteModalOpen} onOpenChange={setPasteModalOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" className="w-full sm:w-auto">
-                      회의 붙여넣기
+                      {t("home.pasteMeeting")}
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-xl">
                     <DialogHeader>
-                      <DialogTitle>회의 붙여넣기</DialogTitle>
+                      <DialogTitle>{t("home.pasteDialogTitle")}</DialogTitle>
                       <DialogDescription>
-                        Google Calendar에서 복사한 내용을 그대로 붙여넣으면 자동으로 입력해요.
+                        {t("home.pasteDialogDesc")}
                       </DialogDescription>
                     </DialogHeader>
                     <Textarea
-                      placeholder="예: 챗봇 화면 기획 논의&#10;1월 20일 (화요일)⋅AM 10:00~ 10:30&#10;참석자 2명"
+                      placeholder={t("home.pastePlaceholder")}
                       value={pastedText}
                       onChange={(e) => setPastedText(e.target.value)}
                       rows={10}
                     />
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setPasteModalOpen(false)}>
-                        취소
+                        {t("common.cancel")}
                       </Button>
                       <Button onClick={handlePasteSubmit} disabled={!pastedText.trim()}>
-                        입력하기
+                        {t("home.pasteAction")}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -381,11 +372,11 @@ export default function MeetingPrepPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>회의 제목</CardTitle>
+              <CardTitle>{t("home.meetingTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Input
-                placeholder="예: 주간 스프린트 리뷰"
+                placeholder={t("home.meetingTitlePlaceholder")}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -395,22 +386,22 @@ export default function MeetingPrepPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>참석자</CardTitle>
+                <CardTitle>{t("home.participants")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Input
-                    placeholder="이름"
+                    placeholder={t("home.participantName")}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                   />
                   <Input
-                    placeholder="역할"
+                    placeholder={t("home.participantRole")}
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value)}
                   />
                   <Button onClick={handleAddParticipant} className="sm:shrink-0">
-                    추가
+                    {t("common.add")}
                   </Button>
                 </div>
                 <div className="space-y-2">
@@ -431,7 +422,7 @@ export default function MeetingPrepPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>적용할 회의 원칙</CardTitle>
+                <CardTitle>{t("home.principles")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {principles.map((p) => (
@@ -468,12 +459,12 @@ export default function MeetingPrepPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>선택된 회의 원칙</CardTitle>
+              <CardTitle>{t("home.selectedPrinciples")}</CardTitle>
             </CardHeader>
             <CardContent>
               {selectedPrincipleNames.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  아직 선택된 원칙이 없어요. 오른쪽에서 원칙을 선택해 주세요.
+                  {t("home.selectedPrinciplesEmpty")}
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
@@ -492,11 +483,11 @@ export default function MeetingPrepPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>아젠다 & 참고 자료</CardTitle>
+              <CardTitle>{t("home.agenda")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Textarea
-                placeholder="## 오늘의 아젠다&#10;&#10;1. 지난 스프린트 회고&#10;2. 다음 스프린트 계획"
+                placeholder={t("home.agendaPlaceholder")}
                 value={agenda}
                 onChange={(e) => setAgenda(e.target.value)}
                 rows={10}
@@ -510,7 +501,7 @@ export default function MeetingPrepPage() {
               onClick={() => handleStartMeeting("audio")}
               disabled={!title || participants.length === 0}
             >
-              오디오 회의 시작
+              {t("home.startAudio")}
             </Button>
             <Button
               size="lg"
@@ -518,7 +509,7 @@ export default function MeetingPrepPage() {
               onClick={() => handleStartMeeting("agent")}
               disabled={!title || participants.length === 0}
             >
-              에이전트 회의 시작
+              {t("home.startAgent")}
             </Button>
           </div>
         </TabsContent>
@@ -526,17 +517,17 @@ export default function MeetingPrepPage() {
         <TabsContent value="history" className="space-y-6">
           <Card className="border-none bg-muted/30 shadow-none">
             <CardHeader>
-              <CardTitle>지난 회의</CardTitle>
+              <CardTitle>{t("home.pastMeetings")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {pastMeetingsLoading && (
-                <p className="text-sm text-muted-foreground">불러오는 중...</p>
+                <p className="text-sm text-muted-foreground">{t("home.pastMeetingsLoading")}</p>
               )}
               {pastMeetingsError && (
                 <p className="text-sm text-red-500">{pastMeetingsError}</p>
               )}
               {!pastMeetingsLoading && !pastMeetingsError && pastMeetings.length === 0 && (
-                <p className="text-sm text-muted-foreground">저장된 회의가 없습니다.</p>
+                <p className="text-sm text-muted-foreground">{t("home.pastMeetingsEmpty")}</p>
               )}
               {!pastMeetingsLoading &&
                 !pastMeetingsError &&
@@ -562,7 +553,7 @@ export default function MeetingPrepPage() {
                               : "bg-muted text-muted-foreground"
                           }`}
                         >
-                          transcript
+                          {t("home.statusTranscripts")}
                         </span>
                         <span
                           className={`rounded-full px-2 py-1 ${
@@ -571,7 +562,7 @@ export default function MeetingPrepPage() {
                               : "bg-muted text-muted-foreground"
                           }`}
                         >
-                          interventions
+                          {t("home.statusInterventions")}
                         </span>
                       </div>
                     </div>

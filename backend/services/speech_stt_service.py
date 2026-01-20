@@ -9,6 +9,8 @@ from typing import Callable, Optional
 
 from openai import OpenAI
 
+from i18n import default_stt_language
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,7 @@ class SpeechSTTService:
     ) -> None:
         self.sample_rate = sample_rate
         self.chunk_seconds = chunk_seconds
-        self.language = language or os.getenv("AUDIO_TRANSCRIBE_LANGUAGE", "ko")
+        self.language = language or os.getenv("AUDIO_TRANSCRIBE_LANGUAGE", default_stt_language())
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
         self.model = os.getenv("AUDIO_TRANSCRIBE_MODEL", "gpt-4o-transcribe-diarize")
         self.response_format = os.getenv("AUDIO_TRANSCRIBE_FORMAT", "diarized_json")

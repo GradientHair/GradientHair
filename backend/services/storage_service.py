@@ -5,6 +5,7 @@ import asyncio
 import base64
 
 from models.meeting import MeetingState, TranscriptEntry
+from i18n import pick, label, label_variants
 
 
 class StorageService:
@@ -116,10 +117,12 @@ class StorageService:
             if preparation_path.exists():
                 try:
                     content = preparation_path.read_text(encoding="utf-8")
+                    title_labels = label_variants("title")
+                    datetime_labels = label_variants("datetime")
                     for line in content.splitlines():
-                        if line.startswith("- **제목**:"):
+                        if any(line.startswith(lab) for lab in title_labels):
                             title = line.split(":", 1)[1].strip()
-                        elif line.startswith("- **일시**:"):
+                        elif any(line.startswith(lab) for lab in datetime_labels):
                             scheduled_at = line.split(":", 1)[1].strip()
                 except OSError:
                     pass
@@ -179,20 +182,20 @@ class StorageService:
 
     async def save_preparation(self, state: MeetingState):
         meeting_dir = self.get_meeting_dir(state.meeting_id)
-        content = f"""# 회의 준비 자료
+        content = f"""# {pick('회의 준비 자료', 'Meeting Prep')}
 
-## 회의 정보
-- **제목**: {state.title}
-- **일시**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+{pick('## 회의 정보', '## Meeting Details')}
+{label('title')} {state.title}
+{label('datetime')} {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-## 참석자
-| 이름 | 역할 |
+{pick('## 참석자', '## Participants')}
+| {pick('이름', 'Name')} | {pick('역할', 'Role')} |
 |------|------|
 """
         for p in state.participants:
             content += f"| {p.name} | {p.role} |\n"
 
-        content += f"\n## 아젠다\n{state.agenda}\n"
+        content += f"\n{label('agenda')}\n{state.agenda}\n"
 
         with open(meeting_dir / "preparation.md", "w", encoding="utf-8") as f:
             f.write(content)
@@ -201,10 +204,10 @@ class StorageService:
     async def save_transcript(self, state: MeetingState):
         await self._flush_transcript_buffer(state.meeting_id)
         meeting_dir = self.get_meeting_dir(state.meeting_id)
-        content = f"""# 회의 녹취록
+        content = f"""# {pick('회의 녹취록', 'Meeting Transcript')}
 
-회의: {state.title}
-일시: {state.started_at.strftime('%Y-%m-%d %H:%M') if state.started_at else 'N/A'}
+{pick('회의', 'Meeting')}: {state.title}
+{pick('일시', 'Date/Time')}: {state.started_at.strftime('%Y-%m-%d %H:%M') if state.started_at else pick('N/A', 'N/A')}
 
 ---
 
@@ -220,21 +223,21 @@ class StorageService:
 
     async def save_interventions(self, state: MeetingState):
         meeting_dir = self.get_meeting_dir(state.meeting_id)
-        content = f"""# Agent 개입 기록
+        content = f"""# {pick('Agent 개입 기록', 'Agent Interventions')}
 
-회의: {state.title}
+{pick('회의', 'Meeting')}: {state.title}
 
 ---
 
 """
         for idx, inv in enumerate(state.interventions, 1):
-            content += f"""## 개입 #{idx}
-- **시간**: {inv.timestamp[:19].replace("T", " ")}
-- **유형**: {inv.intervention_type.value}
-- **메시지**: {inv.message}
+            content += f"""## {pick('개입', 'Intervention')} #{idx}
+{pick('- **시간**:', '- **Time**:')} {inv.timestamp[:19].replace(\"T\", \" \")}
+{label('intervention_type')} {inv.intervention_type.value}
+{label('intervention_message')} {inv.message}
 """
             if inv.violated_principle:
-                content += f"- **위반 원칙**: {inv.violated_principle}\n"
+                content += f"{label('violated_principle')} {inv.violated_principle}\n"
             if inv.parking_lot_item:
                 content += f"- **Parking Lot**: {inv.parking_lot_item}\n"
             content += "\n"

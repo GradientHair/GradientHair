@@ -8,6 +8,7 @@ from typing import Callable, Optional, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
+from i18n import pick
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -138,9 +139,9 @@ class LLMStructuredOutputRunner:
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            "이전 응답 처리 중 오류가 발생했습니다: "
-                            f"{last_error}. 올바른 JSON만 다시 출력하세요."
+                        "content": pick(
+                            f"이전 응답 처리 중 오류가 발생했습니다: {last_error}. 올바른 JSON만 다시 출력하세요.",
+                            f"An error occurred while processing the previous response: {last_error}. Please output only valid JSON.",
                         ),
                     }
                 )

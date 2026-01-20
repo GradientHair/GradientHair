@@ -1,6 +1,7 @@
 """Participation Agent - 발언 균형 감지"""
 from agents.base_agent import BaseAgent, AnalysisResult
 from models.meeting import MeetingState, TranscriptEntry
+from i18n import pick
 
 
 class ParticipationAgent(BaseAgent):
@@ -34,7 +35,10 @@ class ParticipationAgent(BaseAgent):
                 agent_name=self.name,
                 needs_intervention=True,
                 intervention_type="PARTICIPATION_IMBALANCE",
-                message=f"잠깐요! {silent.name} 님 아직 발언 안 하셨어요. {silent.role} 관점에서 어떻게 보세요?",
+                message=pick(
+                    f"잠깐요! {silent.name} 님 아직 발언 안 하셨어요. {silent.role} 관점에서 어떻게 보세요?",
+                    f"Quick check-in: {silent.name} hasn't spoken yet. How do you see it from a {silent.role} perspective?",
+                ),
                 confidence=0.9,
                 suggested_speaker=silent.name,
             )
@@ -50,7 +54,10 @@ class ParticipationAgent(BaseAgent):
                         agent_name=self.name,
                         needs_intervention=True,
                         intervention_type="PARTICIPATION_IMBALANCE",
-                        message=f"잠깐요! {p.name} 님이 대부분 발언하고 계세요. {least_speaker.name} 님 의견도 들어볼까요?",
+                        message=pick(
+                            f"잠깐요! {p.name} 님이 대부분 발언하고 계세요. {least_speaker.name} 님 의견도 들어볼까요?",
+                            f"Hold on—{p.name} is doing most of the talking. Can we hear from {least_speaker.name} too?",
+                        ),
                         confidence=0.85,
                         suggested_speaker=least_speaker.name,
                     )

@@ -42,6 +42,7 @@ from agents.review_agent import ReviewOrchestratorAgent
 from agents.safety_orchestrator import SafetyOrchestrator
 from agents.persona_dialogue_agent import PersonaDialogueAgent
 from agents.meeting_context import MeetingContext, AgentOrchestrator
+from i18n import pick
 
 app = FastAPI(title="MeetingMod API")
 
@@ -198,8 +199,8 @@ async def create_meeting(request: CreateMeetingRequest):
     # 원칙 로드 (간단히 하드코딩)
     principles = []
     if "agile" in request.principleIds:
-        principles.append({"id": "agile", "name": "수평적 의사결정"})
-        principles.append({"id": "agile", "name": "타임박스"})
+        principles.append({"id": "agile", "name": pick("수평적 의사결정", "Shared decision-making")})
+        principles.append({"id": "agile", "name": pick("타임박스", "Timebox")})
     if "aws-leadership" in request.principleIds:
         principles.append({"id": "aws", "name": "Disagree and Commit"})
 
@@ -430,7 +431,7 @@ async def _run_diarize_job(state: MeetingState) -> None:
         meeting_dir = storage.get_meeting_dir(state.meeting_id)
         diarized_md = meeting_dir / "transcript_diarized.md"
         diarized_json = meeting_dir / "transcript_diarized.json"
-        lines = [f"# Diarized Transcript\n\n회의: {state.title}\n\n---\n"]
+        lines = [f"# Diarized Transcript\n\n{pick('회의', 'Meeting')}: {state.title}\n\n---\n"]
         for seg in segments:
             lines.append(f"- **{seg.speaker}**: {seg.text}\n")
         diarized_md.write_text("".join(lines), encoding="utf-8")
@@ -846,7 +847,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 result = await speaker_service.identify_speaker(entry.text)
                 speaker = result.get("speaker", "Unknown")
                 confidence = float(result.get("confidence", 0.0))
-                normalized_text = result.get("text_ko", entry.text)
+                normalized_text = result.get("text", result.get("text_ko", entry.text))
             except Exception as e:
                 logger.error(f"Speaker identification failed: {e}", exc_info=True)
                 speaker = "Unknown"
@@ -1140,7 +1141,10 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                             "type": "error",
                             "data": {
                                 "code": "AGENT_MODE_FAILURE",
-                                "message": "에이전트 모드 대화 생성에 실패했습니다. 환경 설정을 확인해주세요.",
+                                "message": pick(
+                                    "에이전트 모드 대화 생성에 실패했습니다. 환경 설정을 확인해주세요.",
+                                    "Failed to generate agent-mode dialogue. Please check your environment configuration.",
+                                ),
                                 "recoverable": False,
                             },
                         },
@@ -1281,7 +1285,10 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                                 "type": "error",
                                 "data": {
                                     "code": "AGENT_MODE_UNAVAILABLE",
-                                    "message": "OPENAI_API_KEY가 설정되어 있지 않아 에이전트 모드를 사용할 수 없습니다.",
+                                    "message": pick(
+                                        "OPENAI_API_KEY가 설정되어 있지 않아 에이전트 모드를 사용할 수 없습니다.",
+                                        "Agent mode is unavailable because OPENAI_API_KEY is not set.",
+                                    ),
                                     "recoverable": False,
                                 },
                             },

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useMeetingStore } from "@/store/meeting-store";
 import { getApiBase } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 type ActionItem = {
   item: string;
@@ -16,7 +17,7 @@ type ActionItem = {
 
 const parseActionItems = (content?: string | null): ActionItem[] => {
   if (!content) return [];
-  if (content.includes("추출된 Action Item이 없습니다.")) return [];
+  if (content.includes("추출된 Action Item이 없습니다.") || content.includes("No action items were extracted.")) return [];
   const lines = content.split("\n").map((line) => line.trim());
   const tableRows = lines.filter((line) => line.startsWith("|") && !line.includes("---"));
   const tableItems = tableRows
@@ -118,7 +119,7 @@ export default function ReviewPage() {
       <Card className="bg-green-50 border-green-500">
         <CardContent className="pt-4">
           <p className="text-green-700">
-            회의록이 저장되었습니다
+            {t("review.saved")}
           </p>
           <p className="text-sm text-green-600">
             meetings/{meetingId}/
@@ -128,14 +129,14 @@ export default function ReviewPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>회의 요약</CardTitle>
+          <CardTitle>{t("review.summaryTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <p><strong>회의:</strong> {title || meetingId}</p>
-            <p><strong>참석자:</strong> {participants.map((p) => p.name).join(", ") || "없음"}</p>
-            <p><strong>발화 수:</strong> {transcript.length}</p>
-            <p><strong>Agent 개입:</strong> {interventions.length}회</p>
+            <p><strong>{t("history.meetingLabel")}:</strong> {title || meetingId}</p>
+            <p><strong>{t("review.participants")}:</strong> {participants.map((p) => p.name).join(", ") || t("common.none")}</p>
+            <p><strong>{t("review.utterances")}:</strong> {transcript.length}</p>
+            <p><strong>{t("review.interventions")}:</strong> {interventions.length}</p>
           </div>
         </CardContent>
       </Card>
@@ -143,11 +144,11 @@ export default function ReviewPage() {
       <div className="grid grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>참여도 분포</CardTitle>
+            <CardTitle>{t("review.speakerStats")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {participants.length === 0 && (
-              <p className="text-gray-500 text-sm">참석자 정보 없음</p>
+              <p className="text-gray-500 text-sm">{t("review.speakerStatsEmpty")}</p>
             )}
             {participants.map((p) => {
               const stats = speakerStats[p.name] || { percentage: 0 };
@@ -166,12 +167,12 @@ export default function ReviewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Agent 개입 기록</CardTitle>
+            <CardTitle>{t("review.interventionLog")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
               {interventions.length === 0 && (
-                <p className="text-gray-500">개입 없음</p>
+                <p className="text-gray-500">{t("review.interventionEmpty")}</p>
               )}
               {interventions.map((inv) => (
                 <div key={inv.id} className="p-2 bg-gray-50 rounded">
@@ -186,17 +187,31 @@ export default function ReviewPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Action Items</CardTitle>
+          <CardTitle>{t("review.savedFiles")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="text-sm space-y-1">
+            <li>{t("review.preparationFile")}</li>
+            <li>{t("review.transcriptFile")}</li>
+            <li>{t("review.interventionsFile")}</li>
+            <li>{t("review.summaryFile")}</li>
+            <li>action-items.md - Action Items</li>
+          </ul>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("review.actionItemsTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {actionItemsStatus === "loading" && (
-            <p className="text-gray-500">Action Item을 생성 중입니다...</p>
+            <p className="text-gray-500">{t("review.actionItemsLoading")}</p>
           )}
           {actionItemsStatus === "error" && (
-            <p className="text-red-500">Action Item을 불러오지 못했어요.</p>
+            <p className="text-red-500">{t("review.actionItemsError")}</p>
           )}
           {actionItemsStatus !== "loading" && actionItems.length === 0 && (
-            <p className="text-gray-500">등록된 Action Item이 없습니다.</p>
+            <p className="text-gray-500">{t("review.actionItemsEmpty")}</p>
           )}
           {actionItems.length > 0 && (
             <div className="space-y-2">
@@ -204,8 +219,13 @@ export default function ReviewPage() {
                 <div key={`${item.item}-${index}`} className="rounded border border-gray-100 p-3">
                   <p className="font-medium">{item.item}</p>
                   <p className="text-gray-500">
-                    {item.owner ? `담당자: ${item.owner}` : "담당자 미정"} ·{" "}
-                    {item.due ? `기한: ${item.due}` : "기한 없음"}
+                    {item.owner
+                      ? t("review.actionItemOwner", { owner: item.owner })
+                      : t("review.actionItemOwnerUnknown")}{" "}
+                    ·{" "}
+                    {item.due
+                      ? t("review.actionItemDue", { due: item.due })
+                      : t("review.actionItemDueNone")}
                   </p>
                 </div>
               ))}
@@ -216,7 +236,7 @@ export default function ReviewPage() {
 
       <div className="flex justify-center">
         <Button onClick={() => (window.location.href = "/")}>
-          새 회의 시작
+          {t("review.startNew")}
         </Button>
       </div>
     </div>
