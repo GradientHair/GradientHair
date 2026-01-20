@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,7 +16,8 @@ from agents.topic_agent import TopicAgent
 from models.meeting import Intervention, InterventionType, MeetingState, TranscriptEntry
 from services.storage_service import StorageService
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
 
 
 @dataclass
@@ -113,13 +113,23 @@ class SafetyCheckAgent:
     """Safety check using OpenAI API with structured output and retries."""
 
     def __init__(self):
+        import os
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
         self.max_retries = 2
+        self.runner = None
+        if self.client:
+            self.runner = LLMStructuredOutputRunner(
+                client=self.client,
+                model="gpt-4o-mini",
+                schema=SafetyCheckResponse,
+                max_retries=self.max_retries,
+                custom_validator=self._validate_response,
+            )
 
     def check(self, message: str) -> SafetyCheckResponse:
         if not message.strip():
             return SafetyCheckResponse(is_safe=True)
-        if self.client is None:
+        if self.runner is None:
             return SafetyCheckResponse(is_safe=True)
 
         prompt = f"""당신은 회의 어시스턴트의 안전 검토자입니다.
@@ -136,30 +146,19 @@ JSON 응답:
 }}
 """
 
-        last_error = None
-        for _ in range(self.max_retries + 1):
-            messages = [{"role": "user", "content": prompt}]
-            if last_error:
-                messages.append({
-                    "role": "user",
-                    "content": f"이전 응답 처리 중 오류가 발생했습니다: {last_error}. 올바른 JSON만 다시 출력하세요.",
-                })
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                )
-                return SafetyCheckResponse.model_validate_json(
-                    response.choices[0].message.content
-                )
-            except (ValidationError, Exception) as exc:  # noqa: BLE001
-                last_error = str(exc)
-        return SafetyCheckResponse(
-            is_safe=False,
-            safe_message="안전 정책 위반 가능성이 있어 메시지를 조정합니다.",
-            reasons=["fallback"],
-        )
+        parsed = self.runner.run(prompt)
+        if parsed is None:
+            return SafetyCheckResponse(
+                is_safe=False,
+                safe_message="안전 정책 위반 가능성이 있어 메시지를 조정합니다.",
+                reasons=["fallback"],
+            )
+        return parsed
+
+    def _validate_response(self, parsed: SafetyCheckResponse) -> ValidationResult:
+        if not parsed.is_safe and not (parsed.safe_message or "").strip():
+            return ValidationResult(ok=False, error="safe_message required when is_safe=false")
+        return ValidationResult(ok=True, value=parsed)
 
 
 class SafetyVerifierAgent:

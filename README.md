@@ -72,3 +72,9 @@ OpenAI Agents Python 사용 예제와 스킬 가이드입니다.
 ## 참고 자료
 
 - [Codex CLI GitHub](https://github.com/openai/codex)
+## DSPy Validation (Optional)
+
+- Set `DSPY_VALIDATE=1` to enable the extra DSPy validation stage in LLM structured output parsing.
+- Requires `dspy` to be installed in the backend environment.
+- When enabled, responses are validated twice: Pydantic schema → DSPy validation.
+
