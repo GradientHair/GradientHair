@@ -48,7 +48,7 @@ export function useWebSocket(meetingId: string) {
     );
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     const now = Date.now();
     if (now - lastConnectAttemptRef.current < 500) {
       return;
@@ -76,8 +76,38 @@ export function useWebSocket(meetingId: string) {
     const defaultProtocol =
       typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
     const defaultWsUrl = `${defaultProtocol}://${defaultHost}:8000`;
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
-    const fullUrl = `${wsUrl}/ws/meetings/${encodeURIComponent(meetingId)}`;
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
+    const fullUrl = `${wsBase}/ws/meetings/${encodeURIComponent(meetingId)}`;
+
+    const healthUrl = wsBase
+      .replace(/^wss:\/\//, "https://")
+      .replace(/^ws:\/\//, "http://")
+      .concat("/api/v1/health");
+
+    const healthOk = await (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1500);
+        const res = await fetch(healthUrl, { signal: controller.signal, cache: "no-store" });
+        clearTimeout(timer);
+        return res.ok;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!healthOk) {
+      isConnectingRef.current = false;
+      const attempt = Math.min(reconnectAttemptsRef.current + 1, 6);
+      reconnectAttemptsRef.current = attempt;
+      const delay = Math.min(500 * 2 ** (attempt - 1), 8000);
+      console.warn("WebSocket health check failed, retrying...", { attempt, delay });
+      reconnectTimerRef.current = setTimeout(() => {
+        connect();
+      }, delay);
+      return;
+    }
+
     console.log("Connecting to WebSocket:", fullUrl);
 
     try {
@@ -144,7 +174,7 @@ export function useWebSocket(meetingId: string) {
 
       ws.onerror = () => {
         // Browser doesn't expose error details for security reasons
-        console.error("WebSocket connection error occurred, readyState:", ws.readyState);
+        console.warn("WebSocket connection error occurred, readyState:", ws.readyState);
         isConnectingRef.current = false;
         try {
           ws.close();
