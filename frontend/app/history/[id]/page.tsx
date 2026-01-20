@@ -13,6 +13,7 @@ type MeetingFiles = {
   preparation?: string | null;
   transcript?: string | null;
   interventions?: string | null;
+  actionItems?: string | null;
 };
 
 type ParsedPreparation = {
@@ -26,6 +27,12 @@ type ParsedIntervention = {
   id: string;
   type: string;
   message: string;
+};
+
+type ActionItem = {
+  item: string;
+  owner: string;
+  due: string;
 };
 
 const extractPreparation = (content?: string | null): ParsedPreparation => {
@@ -111,6 +118,46 @@ const parseInterventions = (content?: string | null): ParsedIntervention[] => {
   return parsed.filter((inv) => inv.message.length > 0);
 };
 
+const parseActionItems = (content?: string | null): ActionItem[] => {
+  if (!content) return [];
+  if (content.includes("추출된 Action Item이 없습니다.")) return [];
+  const lines = content.split("\n").map((line) => line.trim());
+  const tableRows = lines.filter((line) => line.startsWith("|") && !line.includes("---"));
+  const tableItems = tableRows
+    .filter(
+      (line) =>
+        !(line.toLowerCase().includes("action") && line.toLowerCase().includes("owner"))
+    )
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
+    .filter((cells) => cells.length >= 3)
+    .map((cells) => ({
+      item: cells[0],
+      owner: cells[1],
+      due: cells[2],
+    }));
+
+  if (tableItems.length > 0) {
+    return tableItems;
+  }
+
+  const bulletLines = lines.filter((line) => line.startsWith("-"));
+  return bulletLines
+    .map((line) => line.replace(/^-\s*\[\s*\]\s*/, "").replace(/^-/, "").trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const item = parts[0] ?? "";
+      const ownerPart = parts.find((part) => part.toLowerCase().startsWith("owner:"));
+      const duePart = parts.find((part) => part.toLowerCase().startsWith("due:"));
+      return {
+        item,
+        owner: ownerPart ? ownerPart.split(":", 2)[1]?.trim() ?? "" : "",
+        due: duePart ? duePart.split(":", 2)[1]?.trim() ?? "" : "",
+      };
+    })
+    .filter((entry) => entry.item.length > 0);
+};
+
 const formatMeetingDate = (value?: string | null) => {
   if (!value) return "날짜 정보 없음";
   const parsed = new Date(value);
@@ -173,6 +220,10 @@ export default function MeetingHistoryDetailPage() {
   const interventions = useMemo(
     () => parseInterventions(meeting?.interventions),
     [meeting?.interventions]
+  );
+  const actionItems = useMemo(
+    () => parseActionItems(meeting?.actionItems),
+    [meeting?.actionItems]
   );
 
   return (
@@ -271,16 +322,25 @@ export default function MeetingHistoryDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>저장된 파일</CardTitle>
+              <CardTitle>Action Items</CardTitle>
             </CardHeader>
-            <CardContent>
-              <ul className="text-sm space-y-1">
-                <li>preparation.md - 회의 준비 자료</li>
-                <li>transcript.md - 전체 녹취록</li>
-                <li>interventions.md - Agent 개입 기록</li>
-                <li>summary.md - 회의 요약</li>
-                <li>action-items.md - Action Items</li>
-              </ul>
+            <CardContent className="space-y-3 text-sm">
+              {actionItems.length === 0 && (
+                <p className="text-muted-foreground">등록된 Action Item이 없습니다.</p>
+              )}
+              {actionItems.length > 0 && (
+                <div className="space-y-2">
+                  {actionItems.map((item, index) => (
+                    <div key={`${item.item}-${index}`} className="rounded border border-slate-100 p-3">
+                      <p className="font-medium">{item.item}</p>
+                      <p className="text-muted-foreground">
+                        {item.owner ? `담당자: ${item.owner}` : "담당자 미정"} ·{" "}
+                        {item.due ? `기한: ${item.due}` : "기한 없음"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

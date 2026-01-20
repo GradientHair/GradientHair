@@ -186,21 +186,6 @@ export default function ReviewPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>저장된 파일</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="text-sm space-y-1">
-            <li>preparation.md - 회의 준비 자료</li>
-            <li>transcript.md - 전체 녹취록</li>
-            <li>interventions.md - Agent 개입 기록</li>
-            <li>summary.md - 회의 요약</li>
-            <li>action-items.md - Action Items</li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Action Items</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
