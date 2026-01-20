@@ -16,6 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -89,6 +90,22 @@ class SaveMeetingRequest(BaseModel):
     transcript: list[TranscriptEntryRequest]
     interventions: list[InterventionRequest]
     speakerStats: dict
+
+
+class DemoUtteranceRequest(BaseModel):
+    agenda: str
+    persona: str
+    participants: list[dict]
+    count: int = 3
+
+
+class DemoUtterance(BaseModel):
+    speaker: str
+    text: str
+
+
+class DemoUtteranceResponse(BaseModel):
+    utterances: list[DemoUtterance]
 
 
 # Response models
@@ -392,6 +409,77 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
         f"meetings/{meeting_id}/action-items.md",
         f"meetings/{meeting_id}/feedback/",
     ]}
+
+
+def _fallback_demo_utterances(request: DemoUtteranceRequest) -> DemoUtteranceResponse:
+    participants = request.participants or [{"name": "김철수", "role": "PM"}]
+    speaker = participants[0].get("name", "김철수")
+    agenda = request.agenda or "스프린트 계획"
+    persona = request.persona or "직설적이고 빠른 의사결정"
+    base = [
+        f"{agenda}에 대해 {persona} 톤으로 정리하겠습니다.",
+        f"핵심 리스크를 먼저 줄이고, 다음 단계로 넘어가야 합니다.",
+        f"오늘은 {agenda}에서 확정할 항목을 2~3개로 제한합시다.",
+    ]
+    utterances = [DemoUtterance(speaker=speaker, text=base[i % len(base)]) for i in range(request.count)]
+    return DemoUtteranceResponse(utterances=utterances)
+
+
+@app.post("/api/v1/demo/utterances", response_model=DemoUtteranceResponse)
+async def generate_demo_utterances(request: DemoUtteranceRequest):
+    """Generate persona-driven demo utterances for demo mode."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return _fallback_demo_utterances(request)
+
+    participants = [
+        {"name": p.get("name", "참석자"), "role": p.get("role", "역할")}
+        for p in (request.participants or [])
+    ]
+    if not participants:
+        participants = [{"name": "김철수", "role": "PM"}]
+
+    prompt = {
+        "agenda": request.agenda,
+        "persona": request.persona,
+        "participants": participants,
+        "count": request.count,
+    }
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You generate short meeting utterances in Korean. "
+                        "Match the given persona tone, keep each utterance concise, "
+                        "and assign a speaker from the provided participants."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Return JSON only with the following shape:\n"
+                        '{ "utterances": [ { "speaker": "...", "text": "..." } ] }\n'
+                        f"Input: {json.dumps(prompt, ensure_ascii=False)}"
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+        payload = json.loads(response.choices[0].message.content or "{}")
+        utterances = payload.get("utterances", [])
+        if not utterances:
+            return _fallback_demo_utterances(request)
+        return DemoUtteranceResponse(
+            utterances=[DemoUtterance(**u) for u in utterances[: request.count]]
+        )
+    except Exception as e:
+        logger.warning(f"Demo utterance generation failed, using fallback: {e}")
+        return _fallback_demo_utterances(request)
 
 
 # ============================================================================

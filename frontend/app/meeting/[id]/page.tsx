@@ -107,7 +107,13 @@ export default function MeetingRoomPage() {
     setIsDemoMode(true);
     demoRef.current = new DemoSimulator(
       (entry) => addTranscript(entry),
-      (intervention) => addIntervention(intervention as Parameters<typeof addIntervention>[0])
+      (intervention) => addIntervention(intervention as Parameters<typeof addIntervention>[0]),
+      {
+        agenda,
+        participants: participants.map((p) => ({ name: p.name, role: p.role })),
+        persona: "직설적이고 빠른 의사결정, 때때로 공격적으로 들릴 수 있음",
+        useLLM: true,
+      }
     );
     demoRef.current.start();
   };

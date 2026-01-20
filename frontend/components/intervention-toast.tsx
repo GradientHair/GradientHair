@@ -11,6 +11,7 @@ const typeConfig = {
   PRINCIPLE_VIOLATION: { icon: "⚠️", label: "원칙 위반", color: "bg-orange-50 border-orange-500" },
   PARTICIPATION_IMBALANCE: { icon: "⚖️", label: "발언 불균형", color: "bg-blue-50 border-blue-500" },
   DECISION_STYLE: { icon: "🤝", label: "의사결정 방식", color: "bg-purple-50 border-purple-500" },
+  FACILITATOR_CHECK: { icon: "✅", label: "퍼실리테이터 확인", color: "bg-green-50 border-green-500" },
 };
 
 export function InterventionToast() {

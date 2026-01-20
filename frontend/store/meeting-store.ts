@@ -15,11 +15,12 @@ interface TranscriptEntry {
 
 interface Intervention {
   id: string;
-  type: "TOPIC_DRIFT" | "PRINCIPLE_VIOLATION" | "PARTICIPATION_IMBALANCE" | "DECISION_STYLE";
+  type: "TOPIC_DRIFT" | "PRINCIPLE_VIOLATION" | "PARTICIPATION_IMBALANCE" | "DECISION_STYLE" | "FACILITATOR_CHECK";
   message: string;
   timestamp: string;
   violatedPrinciple?: string;
   parkingLotItem?: string;
+  suggestedSpeaker?: string;
 }
 
 interface SpeakerStats {
