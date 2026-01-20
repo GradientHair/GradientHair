@@ -824,7 +824,8 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
 
     # Error callback for STT service
     async def on_stt_error(error: Exception):
-        logger.error(f"STT service error: {error}")
+        error_text = str(error) or error.__class__.__name__
+        logger.error(f"STT service error: {error_text}")
         # Notify client about STT error but don't crash the meeting
         await manager.send_message(
             meeting_id,
@@ -832,7 +833,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 "type": "error",
                 "data": {
                     "code": "STT_ERROR",
-                    "message": str(error),
+                    "message": error_text,
                     "recoverable": True,
                 },
             },

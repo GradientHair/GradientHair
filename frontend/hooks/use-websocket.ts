@@ -145,9 +145,12 @@ export function useWebSocket(meetingId: string) {
             case "stt_status":
               console.log("STT Status:", message.data.status);
               break;
-            case "error":
-              console.error("Server error:", message.data);
+            case "error": {
+              const payload = message.data || {};
+              const msg = payload.message || payload.code || "unknown";
+              console.error("Server error:", msg, payload);
               break;
+            }
             default:
               console.log("Unknown message type:", message.type, message);
           }
