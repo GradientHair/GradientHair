@@ -9,6 +9,7 @@ from agents.base_agent import BaseAgent, AnalysisResult
 from models.meeting import MeetingState, TranscriptEntry
 from services.principles_service import PrinciplesService
 from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
+from services.model_router import ModelRouter
 
 
 class PrincipleViolationResponse(BaseModel):
@@ -29,9 +30,10 @@ class PrincipleAgent(BaseAgent):
         self.max_retries = 2
         self.runner = None
         if self.client:
+            choice = ModelRouter.select("fast", structured_output=True, api="chat")
             self.runner = LLMStructuredOutputRunner(
                 client=self.client,
-                model="gpt-4o-mini",
+                model=choice.model,
                 schema=PrincipleViolationResponse,
                 max_retries=self.max_retries,
                 custom_validator=self._validate_response,
