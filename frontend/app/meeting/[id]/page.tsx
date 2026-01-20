@@ -153,6 +153,9 @@ export default function MeetingRoomPage() {
       if (response.ok) {
         const result = await response.json();
         console.log("Meeting saved:", result);
+      } else {
+        const text = await response.text();
+        console.warn("Meeting save failed:", response.status, text);
       }
     } catch (error) {
       console.error("Failed to save meeting:", error);
