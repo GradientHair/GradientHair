@@ -44,3 +44,35 @@
 이 워크플로우는 git hook으로 강제된다:
 - `pre-commit`: 최근 테스트 스탬프 확인
 - `post-commit`: review-agent-safety 기준 검사
+
+## Playwright UI Demo Flow (Shareable)
+
+다른 사람이 동일하게 재현 가능한 UI 데모 플로우입니다.
+
+### 사전 준비
+1. 백엔드/프론트 모두 실행
+2. 프론트 환경 변수 설정(로컬):
+   - `frontend/.env.local`
+     - `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
+     - `NEXT_PUBLIC_WS_URL=ws://localhost:8000`
+
+### 실행 순서 (Playwright 또는 수동)
+1. `http://localhost:3000` 접속
+2. 회의 제목 입력 → 참석자(이름/역할) 추가 → 아젠다 입력
+3. **회의 시작** 클릭 → `/meeting/{id}` 진입 확인
+4. **데모 모드** 클릭 → 실시간 자막 출력 확인
+5. 개입 메시지 확인:
+   - `TOPIC_DRIFT`
+   - `PRINCIPLE_VIOLATION`
+6. 개입 카드 **확인** 클릭(오버레이 제거)
+7. **회의 종료** 클릭 → `/review/{id}` 이동 확인
+8. 저장 파일 목록 확인:
+   - `summary.md`
+   - `action-items.md`
+   - `interventions.md`
+   - `transcript.md`
+
+### 확인 포인트
+- `/meeting/{id}`에서 상태가 “연결됨”으로 표시되는지
+- 데모 모드에서 자막/개입이 생성되는지
+- 리뷰 화면에서 저장 경로가 표시되는지
