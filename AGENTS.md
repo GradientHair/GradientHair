@@ -40,7 +40,7 @@
    - `scripts/review_agent_safety_check.py` 실행 (score 출력 확인)
 
 - 훅 템플릿 설치: `scripts/install_hooks.sh` 실행
-- (선택) DSPy 검증 활성화: `DSPY_VALIDATE=1` 환경 변수 설정 후 실행
+- (선택) DSPy 검증 활성화: `DSPY_VALIDATE=1` 환경 변수 설정 (backend에 dspy 설치 필요)
 
 이 워크플로우는 git hook으로 강제된다:
 - `pre-commit`: 최근 테스트 스탬프 확인
