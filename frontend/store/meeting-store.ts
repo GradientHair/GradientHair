@@ -11,6 +11,7 @@ interface TranscriptEntry {
   timestamp: string;
   speaker: string;
   text: string;
+  latencyMs?: number;
 }
 
 interface Intervention {

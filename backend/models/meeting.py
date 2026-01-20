@@ -34,6 +34,7 @@ class TranscriptEntry:
     text: str
     duration: float = 0.0
     confidence: float = 1.0
+    latency_ms: float | None = None
 
 
 @dataclass

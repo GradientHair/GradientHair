@@ -6,6 +6,14 @@ import { useMeetingStore } from "@/store/meeting-store";
 export function TranscriptView() {
   const { transcript, interventions } = useMeetingStore();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recentLatencies = transcript
+    .map((t) => t.latencyMs)
+    .filter((v): v is number => typeof v === "number")
+    .slice(-10);
+  const avgLatency =
+    recentLatencies.length > 0
+      ? Math.round(recentLatencies.reduce((sum, v) => sum + v, 0) / recentLatencies.length)
+      : null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -19,6 +27,9 @@ export function TranscriptView() {
 
   return (
     <div className="h-[400px] overflow-y-auto bg-white rounded-lg border p-4 space-y-3">
+      {avgLatency !== null && (
+        <div className="text-xs text-gray-500">최근 전사 지연: {avgLatency}ms (최근 10개 평균)</div>
+      )}
       {allItems.map((item) => {
         if (item.itemType === "transcript") {
           const time = new Date(item.timestamp).toLocaleTimeString("ko-KR", {
@@ -31,6 +42,9 @@ export function TranscriptView() {
               <span className="text-gray-500">[{time}]</span>{" "}
               <span className="font-semibold">{item.speaker}:</span>{" "}
               <span>{item.text}</span>
+              {typeof item.latencyMs === "number" && (
+                <span className="ml-2 text-xs text-gray-400">({Math.round(item.latencyMs)}ms)</span>
+              )}
             </div>
           );
         } else {

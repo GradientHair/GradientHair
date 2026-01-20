@@ -71,6 +71,7 @@ class TranscriptEntryRequest(BaseModel):
     timestamp: str
     speaker: str
     text: str
+    latencyMs: float | None = None
 
 
 class InterventionRequest(BaseModel):
@@ -107,6 +108,7 @@ class TranscriptEntryResponse(BaseModel):
     text: str
     duration: float
     confidence: float
+    latencyMs: float | None
 
 
 class InterventionResponse(BaseModel):
@@ -236,6 +238,7 @@ def _meeting_state_to_response(state: MeetingState) -> MeetingResponse:
             text=t.text,
             duration=t.duration,
             confidence=t.confidence,
+            latencyMs=t.latency_ms,
         )
         for t in state.transcript
     ]
@@ -343,6 +346,7 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
             timestamp=t.timestamp,
             speaker=t.speaker,
             text=t.text,
+            latency_ms=t.latencyMs,
         )
         for t in request.transcript
     ]
@@ -604,16 +608,58 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
 
-    async def on_transcript(text: str):
+    def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
+        existing_by_id = {p.id: p for p in existing}
+        existing_by_name = {p.name: p for p in existing}
+        updated: list[Participant] = []
+
+        for raw in raw_participants:
+            name = raw.get("name")
+            if not name:
+                continue
+            role = raw.get("role", "")
+            participant_id = raw.get("id") or str(uuid.uuid4())
+            existing_participant = existing_by_id.get(participant_id) or existing_by_name.get(name)
+            if existing_participant:
+                existing_participant.id = participant_id
+                existing_participant.name = name
+                existing_participant.role = role
+                updated.append(existing_participant)
+            else:
+                updated.append(Participant(id=participant_id, name=name, role=role))
+
+        return updated
+
+    async def on_transcript(text: str, latency_ms: float | None = None):
+        start_perf = asyncio.get_event_loop().time()
         logger.info(f"=== TRANSCRIPT RECEIVED: '{text}' ===")
 
-        # 화자 식별 (간소화 - 첫 번째 참석자로 기본 설정)
+        speaker = "Unknown"
+        confidence = 0.0
+        normalized_text = text
         if state.participants:
-            speaker = state.participants[0].name
+            try:
+                result = await speaker_service.identify_speaker(text)
+                speaker = result.get("speaker", "Unknown")
+                confidence = float(result.get("confidence", 0.0))
+                normalized_text = result.get("text_ko", text)
+            except Exception as e:
+                logger.error(f"Speaker identification failed: {e}", exc_info=True)
+                speaker = "Unknown"
+                confidence = 0.0
+                normalized_text = text
         else:
-            speaker = "Unknown"
+            try:
+                normalized_text = await speaker_service.normalize_text(text)
+            except Exception as e:
+                logger.error(f"Text normalization failed: {e}", exc_info=True)
+                normalized_text = text
 
-        logger.info(f"Speaker: {speaker}")
+            participant_names = {p.name for p in state.participants}
+            if speaker not in participant_names:
+                if confidence < 0.5:
+                    speaker = "Unknown"
+                    confidence = 0.0
 
         # 참석자 통계 업데이트
         for p in state.participants:
@@ -625,10 +671,12 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             id=f"tr_{uuid.uuid4().hex[:8]}",
             timestamp=datetime.utcnow().isoformat(),
             speaker=speaker,
-            text=text,
-            confidence=1.0,  # Default confidence since speaker identification is simplified
+            text=normalized_text,
+            confidence=confidence,
+            latency_ms=(latency_ms or 0.0) + max(0.0, (asyncio.get_event_loop().time() - start_perf) * 1000),
         )
         state.transcript.append(entry)
+        await storage.append_transcript_entry(state, entry)
 
         logger.info(f"Sending transcript to frontend for meeting: {meeting_id}")
         try:
@@ -772,7 +820,21 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     try:
         while True:
             data = await websocket.receive_json()
-            if data["type"] == "audio":
+            message_type = data.get("type")
+            if message_type == "participants":
+                raw_participants = data.get("data", [])
+                if isinstance(raw_participants, list) and raw_participants:
+                    updated = _coerce_participants(raw_participants, state.participants)
+                    if updated:
+                        state.participants = updated
+                        speaker_service.set_participants(state.participants)
+                        logger.info(
+                            f"[{meeting_id}] Participants synced: "
+                            f"{', '.join(p.name for p in state.participants)}"
+                        )
+                continue
+
+            if message_type == "audio":
                 audio_chunk_count += 1
                 audio_size = len(data.get("data", ""))
                 logger.info(f"[{meeting_id}] Audio chunk #{audio_chunk_count} received, size: {audio_size} bytes")
@@ -785,8 +847,8 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                         logger.warning(f"[{meeting_id}] Failed to send audio chunk #{audio_chunk_count}")
                 else:
                     logger.warning(f"[{meeting_id}] STT not connected, audio chunk dropped")
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for meeting {meeting_id}")
+    except WebSocketDisconnect as e:
+        logger.info(f"WebSocket disconnected for meeting {meeting_id} (code={getattr(e, 'code', 'unknown')})")
         manager.disconnect(meeting_id)
         await stt_service.disconnect()
         await storage.save_transcript(state)
