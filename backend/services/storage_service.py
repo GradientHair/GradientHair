@@ -66,8 +66,11 @@ class StorageService:
         if not buffer:
             return
         meeting_dir = self.get_meeting_dir(meeting_id)
-        with open(meeting_dir / "transcript_live.txt", "a", encoding="utf-8") as f:
-            f.writelines(buffer)
+        def _append_files():
+            with open(meeting_dir / "transcript_live.txt", "a", encoding="utf-8") as f:
+                f.writelines(buffer)
+
+        await asyncio.to_thread(_append_files)
         self._transcript_buffers[meeting_id] = []
         self._transcript_last_flush[meeting_id] = asyncio.get_event_loop().time()
 

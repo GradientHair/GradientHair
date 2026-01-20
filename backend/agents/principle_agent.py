@@ -1,4 +1,5 @@
 """Principle Agent - 회의 원칙 위반 감지"""
+import asyncio
 import os
 from typing import Optional
 
@@ -81,7 +82,7 @@ JSON 응답:
 
         if self.runner is None:
             return self._fallback_analysis(state, recent_transcript)
-        parsed = self.runner.run(prompt)
+        parsed = await asyncio.to_thread(self.runner.run, prompt)
         if parsed is None:
             return self._fallback_analysis(state, recent_transcript)
 

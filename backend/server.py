@@ -737,6 +737,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     pending_transcripts: dict[str, TranscriptEntry] = {}
     pending_speech_end = False
     last_agent_run_at = 0.0
+    last_partial_sent_at: dict[str, float] = {}
 
     def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
         existing_by_id = {p.id: p for p in existing}
@@ -859,6 +860,12 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         text = (text or "").strip()
         if not text:
             return
+
+        now = asyncio.get_event_loop().time()
+        last_sent = last_partial_sent_at.get(item_id, 0.0)
+        if now - last_sent < 0.15:
+            return
+        last_partial_sent_at[item_id] = now
 
         entry = pending_transcripts.get(item_id)
         if entry is None:

@@ -147,7 +147,10 @@ export default function MeetingPrepPage() {
     const modeQuery = `?mode=${mode}`;
 
     // API 호출하여 회의 생성
+    let navigated = false;
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
       const response = await fetch(`${apiBase}/meetings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,14 +160,19 @@ export default function MeetingPrepPage() {
           participants,
           principleIds: selectedPrinciples,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
 
       if (response.ok) {
         const data = (await response.json()) as { id?: string };
         router.push(`/meeting/${data.id ?? meetingId}${modeQuery}`);
+        navigated = true;
       }
     } catch {
       // 에이전트 모드/오프라인 환경에서 백엔드 없이도 동작
+    }
+    if (!navigated) {
       router.push(`/meeting/${meetingId}${modeQuery}`);
     }
   };

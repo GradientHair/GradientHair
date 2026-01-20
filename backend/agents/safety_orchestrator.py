@@ -43,8 +43,8 @@ class Blackboard:
         self.meeting_dir = self.storage.get_meeting_dir(meeting_id)
         self.path = self.meeting_dir / "blackboard.json"
 
-    def append_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        data = self._read()
+    async def append_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        data = await asyncio.to_thread(self._read)
         data.setdefault("events", [])
         data["events"].append({
             "type": event_type,
@@ -52,13 +52,13 @@ class Blackboard:
             "payload": payload,
         })
         data["events"] = data["events"][-200:]
-        self._write(data)
+        await asyncio.to_thread(self._write, data)
 
-    def update_snapshot(self, snapshot: dict[str, Any]) -> None:
-        data = self._read()
+    async def update_snapshot(self, snapshot: dict[str, Any]) -> None:
+        data = await asyncio.to_thread(self._read)
         data["snapshot"] = snapshot
         data["updated_at"] = datetime.utcnow().isoformat()
-        self._write(data)
+        await asyncio.to_thread(self._write, data)
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -128,7 +128,7 @@ class SafetyCheckAgent:
                 custom_validator=self._validate_response,
             )
 
-    def check(self, message: str) -> SafetyCheckResponse:
+    async def check(self, message: str) -> SafetyCheckResponse:
         if not message.strip():
             return SafetyCheckResponse(is_safe=True)
         if self.runner is None:
@@ -148,7 +148,7 @@ JSON 응답:
 }}
 """
 
-        parsed = self.runner.run(prompt)
+        parsed = await asyncio.to_thread(self.runner.run, prompt)
         if parsed is None:
             return SafetyCheckResponse(
                 is_safe=False,
@@ -170,11 +170,11 @@ class SafetyVerifierAgent:
         self.max_length = 220
         self.safety_check_agent = safety_check_agent
 
-    def verify(self, intervention: Optional[Intervention]) -> Optional[Intervention]:
+    async def verify(self, intervention: Optional[Intervention]) -> Optional[Intervention]:
         if intervention is None:
             return None
         message = intervention.message or ""
-        verdict = self.safety_check_agent.check(message)
+        verdict = await self.safety_check_agent.check(message)
         if not verdict.is_safe:
             intervention.message = verdict.safe_message or "안전 정책 위반 가능성이 있어 메시지를 조정합니다."
             intervention.intervention_type = InterventionType.DECISION_STYLE
@@ -259,13 +259,13 @@ class SafetyOrchestrator:
             return OrchestratorResult(intervention=None)
 
         blackboard = Blackboard(state.meeting_id)
-        blackboard.update_snapshot({
+        await blackboard.update_snapshot({
             "participants": [p.name for p in state.participants],
             "recent_transcript": [t.text for t in recent_transcript[-5:]],
         })
 
         plan = self.planner.plan(state, recent_transcript)
-        blackboard.append_event("plan", {"agents": plan})
+        await blackboard.append_event("plan", {"agents": plan})
 
         results: list[AnalysisResult] = []
         errors: list[AgentError] = []
@@ -287,16 +287,16 @@ class SafetyOrchestrator:
                 elif isinstance(item, AgentError):
                     errors.append(item)
 
-        blackboard.append_event("checkpoint", {"summary": self.group_chat.summarize(results)})
+        await blackboard.append_event("checkpoint", {"summary": self.group_chat.summarize(results)})
 
         if not results and errors:
             recovery = await self.recovery_agent.recover(state, recent_transcript, errors)
             recovery = self._attach_sources(recovery, recent_transcript)
-            verified = self.verifier.verify(recovery)
+            verified = await self.verifier.verify(recovery)
             return OrchestratorResult(intervention=verified, errors=errors, warnings=self.crash_detector.analyze(errors))
 
         intervention = self._merge_interventions(results, recent_transcript)
-        intervention = self.verifier.verify(intervention)
+        intervention = await self.verifier.verify(intervention)
         if intervention:
             approved, note = self.adversary.review(intervention)
             if not approved:
