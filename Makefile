@@ -1,4 +1,4 @@
-.PHONY: env-backend env-frontend setup-backend setup-frontend run-backend run-frontend run-local-dev
+.PHONY: env-backend env-frontend setup-backend setup-frontend run-backend run-frontend run-local-dev run-backend-prod run-frontend-prod run-local-prod
 
 BACKEND_DEPS = fastapi openai pydantic python-dotenv uvicorn websockets
 
@@ -44,3 +44,19 @@ run-frontend: env-frontend
 
 run-local-dev:
 	@$(MAKE) -j2 run-backend run-frontend
+
+run-backend-prod: env-backend
+	@cd backend && \
+	if command -v uv >/dev/null 2>&1; then \
+		uv venv .venv >/dev/null 2>&1 || true; \
+		. .venv/bin/activate && uv pip install $(BACKEND_DEPS) && uvicorn server:app --host 0.0.0.0 --port 8000; \
+	else \
+		python3 -m venv .venv >/dev/null 2>&1 || true; \
+		. .venv/bin/activate && pip install $(BACKEND_DEPS) && uvicorn server:app --host 0.0.0.0 --port 8000; \
+	fi
+
+run-frontend-prod: env-frontend
+	@cd frontend && npm install && npm run build && npm run start
+
+run-local-prod:
+	@$(MAKE) -j2 run-backend-prod run-frontend-prod

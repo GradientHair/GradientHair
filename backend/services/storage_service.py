@@ -39,6 +39,7 @@ class StorageService:
             except Exception:
                 meeting_dir = legacy_dir
         meeting_dir.mkdir(exist_ok=True)
+        (meeting_dir / "transcript_live.txt").touch(exist_ok=True)
         return meeting_dir
 
     async def _flush_transcript_buffer(self, meeting_id: str) -> None:
@@ -165,6 +166,7 @@ class StorageService:
 
         with open(meeting_dir / "preparation.md", "w", encoding="utf-8") as f:
             f.write(content)
+        (meeting_dir / "transcript_live.txt").touch(exist_ok=True)
 
     async def save_transcript(self, state: MeetingState):
         await self._flush_transcript_buffer(state.meeting_id)

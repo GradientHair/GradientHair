@@ -201,7 +201,7 @@ class RealtimeSTTService:
                     "modalities": ["text", "audio"],
                     "input_audio_format": "pcm16",
                     "input_audio_transcription": {
-                        "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe-diarize"),
+                        "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
                         "language": os.getenv("REALTIME_TRANSCRIBE_LANGUAGE", "ko"),
                     },
                     "turn_detection": {
@@ -209,6 +209,8 @@ class RealtimeSTTService:
                         "threshold": vad_threshold,
                         "prefix_padding_ms": vad_prefix_ms,
                         "silence_duration_ms": vad_silence_ms,
+                        "create_response": False,
+                        "interrupt_response": False,
                     },
                 },
             }
