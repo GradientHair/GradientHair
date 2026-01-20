@@ -116,7 +116,13 @@ class PersonaDialogueAgent:
             if parsed and parsed.utterances:
                 return parsed.utterances
 
-        return self._fallback_dialogue(state, recent_transcript, planned_turns, rng)
+        return self._fallback_dialogue(
+            state,
+            recent_transcript,
+            planned_turns,
+            assignments,
+            rng,
+        )
 
     def _plan_turns(
         self,
@@ -199,15 +205,42 @@ JSON 응답:
         state: MeetingState,
         recent_transcript: list[TranscriptEntry],
         planned_turns: list[PersonaDialogueTurn],
+        assignments: list[PersonaAssignment],
         rng: random.Random,
     ) -> list[PersonaDialogueTurn]:
         agenda = state.agenda or "이번 회의의 핵심 작업"
         recent_topic = recent_transcript[-1].text if recent_transcript else agenda
+        assignment_lookup = {a.name: a for a in assignments}
         off_topic_samples = [
             "오늘 점심 메뉴 정하셨나요?",
             "요즘 날씨가 너무 변덕스러워요.",
             "회의 끝나고 커피 한 잔 어때요?",
         ]
+        persona_templates = {
+            "백엔드 엔지니어": [
+                "{recent_topic} 흐름을 보니 {agenda}에서 API 스펙과 데이터 모델부터 정리하는 게 좋아요.",
+                "{agenda} 기준으로 백엔드에서는 로깅/모니터링 지표를 먼저 합의하면 좋겠습니다.",
+                "{agenda} 작업을 진행하려면 핵심 엔드포인트와 성능 이슈를 우선 정리해둘게요.",
+            ],
+            "프론트 엔지니어": [
+                "{agenda} 관련 화면 플로우를 먼저 그려보고 상태관리 기준을 세우면 좋겠어요.",
+                "{recent_topic}를 반영해서 컴포넌트 분리 기준을 정하고 작업을 쪼개죠.",
+                "{agenda}를 위해 입력/검증 UX를 정리한 뒤 프론트 태스크로 쪼개겠습니다.",
+            ],
+            "UI/UX 엔지니어": [
+                "{agenda}에서 사용자 여정을 먼저 정의하고 핵심 피드백 루프를 잡아보죠.",
+                "{recent_topic}를 바탕으로 접근성 체크리스트를 만들고 우선순위를 나눌게요.",
+                "{agenda} 관련 정보 구조를 재정리해서 디자인 태스크로 분리하면 좋겠습니다.",
+            ],
+        }
+        generic_templates = [
+            "{agenda}를 진행하려면 역할별로 태스크를 나눠서 담당을 정하는 게 좋겠어요.",
+            "{recent_topic} 방향으로 {agenda}의 우선순위를 정리하고 작업을 분리해봅시다.",
+        ]
+        persona_template_pool = {
+            key: list(values) for key, values in persona_templates.items()
+        }
+        generic_pool = list(generic_templates)
         for turn in planned_turns:
             if turn.is_off_topic:
                 turn.text = rng.choice(off_topic_samples)
@@ -215,7 +248,22 @@ JSON 응답:
             if turn.is_agile_violation:
                 turn.text = f"{agenda}은(는) 제가 방향을 정할게요. 이대로 진행합시다."
                 continue
-            turn.text = f"{recent_topic}를 기준으로 {agenda}를 진행하려면 역할별로 태스크를 분리해서 진행하는 게 좋겠어요."
+            assignment = assignment_lookup.get(turn.speaker)
+            persona = assignment.persona if assignment else None
+            if persona in persona_template_pool:
+                pool = persona_template_pool[persona]
+                if not pool:
+                    pool = list(persona_templates[persona])
+                    persona_template_pool[persona] = pool
+                template = pool.pop(rng.randrange(len(pool)))
+            else:
+                if not generic_pool:
+                    generic_pool = list(generic_templates)
+                template = generic_pool.pop(rng.randrange(len(generic_pool)))
+            turn.text = template.format(
+                agenda=agenda,
+                recent_topic=recent_topic,
+            )
         return planned_turns
 
     def _validate_response(self, parsed: PersonaDialogueResponse) -> ValidationResult:
