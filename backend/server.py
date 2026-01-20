@@ -396,10 +396,19 @@ async def _run_review_jobs(state: MeetingState) -> None:
     storage = StorageService()
     try:
         review_agent = ReviewOrchestratorAgent()
-        review = await review_agent.review(state)
+        action_items_task = asyncio.create_task(review_agent.action_item_agent.analyze(state))
+
+        async def _save_action_items():
+            items = await action_items_task
+            content = review_agent._format_action_items(items)
+            await storage.save_action_items(state, content)
+            return items
+
+        save_action_items_task = asyncio.create_task(_save_action_items())
+        review = await review_agent.review(state, generate_action_items=False)
         await storage.save_summary(state, review.summary_markdown)
-        await storage.save_action_items(state, review.action_items_markdown)
         await storage.save_individual_feedback(state, review.feedback_by_participant)
+        await save_action_items_task
     except Exception as e:
         logger.error(f"Review generation failed: {e}", exc_info=True)
 

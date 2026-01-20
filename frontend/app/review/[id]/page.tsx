@@ -17,12 +17,9 @@ type ActionItem = {
 const parseActionItems = (content?: string | null): ActionItem[] => {
   if (!content) return [];
   if (content.includes("추출된 Action Item이 없습니다.")) return [];
-  const rows = content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("|") && !line.includes("---"));
-
-  return rows
+  const lines = content.split("\n").map((line) => line.trim());
+  const tableRows = lines.filter((line) => line.startsWith("|") && !line.includes("---"));
+  const tableItems = tableRows
     .filter(
       (line) =>
         !(line.toLowerCase().includes("action") && line.toLowerCase().includes("owner"))
@@ -34,6 +31,27 @@ const parseActionItems = (content?: string | null): ActionItem[] => {
       owner: cells[1],
       due: cells[2],
     }));
+
+  if (tableItems.length > 0) {
+    return tableItems;
+  }
+
+  const bulletLines = lines.filter((line) => line.startsWith("-"));
+  return bulletLines
+    .map((line) => line.replace(/^-\s*\[\s*\]\s*/, "").replace(/^-/, "").trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const item = parts[0] ?? "";
+      const ownerPart = parts.find((part) => part.toLowerCase().startsWith("owner:"));
+      const duePart = parts.find((part) => part.toLowerCase().startsWith("due:"));
+      return {
+        item,
+        owner: ownerPart ? ownerPart.split(":", 2)[1]?.trim() ?? "" : "",
+        due: duePart ? duePart.split(":", 2)[1]?.trim() ?? "" : "",
+      };
+    })
+    .filter((entry) => entry.item.length > 0);
 };
 
 export default function ReviewPage() {
