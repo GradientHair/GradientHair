@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -52,6 +54,11 @@ def main() -> None:
         action="store_true",
         help="LLM 실모드만 사용 (OPENAI_API_KEY 필요)",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="LLM 스트리밍 모드 사용",
+    )
     args = parser.parse_args()
 
     state = build_sample_state(args.agenda)
@@ -66,16 +73,26 @@ def main() -> None:
         turns=args.turns,
         seed=args.seed,
         require_llm=args.llm_only,
+        stream=args.stream,
     )
 
+    rng = random.Random(args.seed)
+    timestamp = datetime.now()
     for turn in turns:
+        timestamp += timedelta(seconds=rng.randint(1, 4))
+        conf = rng.uniform(0.7, 0.95)
+        latency = rng.randint(900, 2600)
         flags = []
         if turn.is_off_topic:
             flags.append("off_topic")
         if turn.is_agile_violation:
             flags.append("agile_violation")
         suffix = f" ({', '.join(flags)})" if flags else ""
-        print(f"{turn.speaker}: {turn.text}{suffix}")
+        print(
+            f"[{timestamp:%Y-%m-%d %H:%M:%S}] "
+            f"{turn.speaker} (conf={conf:.2f}, latency={latency}ms): "
+            f"{turn.text}{suffix}"
+        )
 
 
 if __name__ == "__main__":

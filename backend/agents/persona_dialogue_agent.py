@@ -101,6 +101,7 @@ class PersonaDialogueAgent:
         turns: int = 3,
         seed: Optional[int] = None,
         require_llm: bool = False,
+        stream: bool = False,
     ) -> list[PersonaDialogueTurn]:
         if not state.participants or turns < 1:
             return []
@@ -116,7 +117,7 @@ class PersonaDialogueAgent:
         planned_turns = self._plan_turns(assignments, turns, rng)
         prompt = self._build_prompt(state, recent_transcript, planned_turns)
         if self.runner is not None:
-            parsed = self.runner.run(prompt)
+            parsed = self.runner.run(prompt, stream=stream)
             if parsed and parsed.utterances:
                 return parsed.utterances
             if require_llm:
@@ -193,7 +194,7 @@ class PersonaDialogueAgent:
 - 나머지 발언은 아젠다 기반으로 업무 수행 방법을 논의한다.
 - 각 발언은 직전 발언을 이어 받아 한 단계씩 구체화한다.
 - 같은 문장을 반복하지 않는다.
-- 한국어로 자연스럽고 현실적인 톤으로 작성한다.
+- 한국어 구어체로 자연스럽고 현실적인 톤으로 작성한다.
 
 JSON 응답:
 {{

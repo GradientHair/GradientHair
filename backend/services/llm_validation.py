@@ -75,7 +75,20 @@ class LLMStructuredOutputRunner:
         self.custom_validator = custom_validator
         self.dspy_validator = DSPyValidator() if use_dspy else None
 
-    def run(self, prompt: str) -> Optional[T]:
+    def _collect_stream_content(self, stream) -> str:
+        chunks: list[str] = []
+        for event in stream:
+            delta = None
+            if event.choices:
+                delta = getattr(event.choices[0], "delta", None)
+            if not delta:
+                continue
+            content = getattr(delta, "content", None)
+            if content:
+                chunks.append(content)
+        return "".join(chunks)
+
+    def run(self, prompt: str, stream: bool = False) -> Optional[T]:
         last_error: Optional[str] = None
         for _ in range(self.max_retries + 1):
             messages = [{"role": "user", "content": prompt}]
@@ -92,8 +105,13 @@ class LLMStructuredOutputRunner:
                     model=self.model,
                     messages=messages,
                     response_format={"type": "json_object"},
+                    stream=stream,
                 )
-                parsed = self.schema.model_validate_json(response.choices[0].message.content)
+                if stream:
+                    content = self._collect_stream_content(response)
+                else:
+                    content = response.choices[0].message.content
+                parsed = self.schema.model_validate_json(content)
                 if self.custom_validator:
                     check = self.custom_validator(parsed)
                     if not check.ok:
