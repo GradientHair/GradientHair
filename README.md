@@ -77,6 +77,20 @@ Examples and guides for OpenAI Agents in Python.
 - 예제 및 활용 가이드
 - 스킬 문서
 
+## 팀 | Team
+
+- 김동현: STT 개발
+- 신훈철: 팀장/기획, Agent 개발
+- 전종섭: App 개발
+- 김재연: Agent 개발
+
+## Team (English)
+
+- Donghyun Kim: STT development
+- Huncheol Shin: Team lead/planning, Agent development
+- Jongseob Jeon: App development
+- Jaeyeon Kim: Agent development
+
 ## AGENTS.md
 
 프로젝트 수준의 에이전트 설정 파일입니다. 복잡한 작업에 대한 multi-agent workflow 가이드를 제공합니다.
