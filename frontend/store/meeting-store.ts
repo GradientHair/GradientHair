@@ -57,6 +57,7 @@ interface MeetingState {
   setSelectedPrinciples: (principles: string[]) => void;
   startMeeting: (meetingId: string) => void;
   addTranscript: (entry: TranscriptEntry) => void;
+  updateTranscript: (entry: Partial<TranscriptEntry> & { id: string }) => void;
   addIntervention: (intervention: Intervention) => void;
   dismissIntervention: () => void;
   updateSpeakerStats: (stats: SpeakerStats) => void;
@@ -89,6 +90,12 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   startMeeting: (meetingId) => set({ meetingId, status: "in_progress" }),
   addTranscript: (entry) =>
     set((state) => ({ transcript: [...state.transcript, entry] })),
+  updateTranscript: (entry) =>
+    set((state) => ({
+      transcript: state.transcript.map((t) =>
+        t.id === entry.id ? { ...t, ...entry } : t
+      ),
+    })),
   addIntervention: (intervention) =>
     set((state) => ({
       interventions: [...state.interventions, intervention],

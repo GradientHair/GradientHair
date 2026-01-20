@@ -136,6 +136,13 @@ export function useWebSocket(meetingId: string) {
               store.addTranscript(normalized);
               break;
             }
+            case "transcript_update": {
+              const data = message.data || {};
+              if (data.id) {
+                store.updateTranscript(data);
+              }
+              break;
+            }
             case "intervention":
               store.addIntervention(message.data);
               break;

@@ -725,6 +725,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     speaker_service.set_participants(state.participants)
     safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
+    speaker_stats_applied: set[str] = set()
 
     def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
         existing_by_id = {p.id: p for p in existing}
@@ -748,6 +749,90 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
 
         return updated
 
+    def _apply_speaker_stats(entry: TranscriptEntry, speaker: str) -> bool:
+        if entry.id in speaker_stats_applied:
+            return False
+        if not speaker or speaker == "Unknown":
+            return False
+        for p in state.participants:
+            if p.name == speaker:
+                p.speaking_count += 1
+                speaker_stats_applied.add(entry.id)
+                return True
+        return False
+
+    async def _send_speaker_stats():
+        total = sum(p.speaking_count for p in state.participants)
+        if total <= 0:
+            return
+        stats = {
+            p.name: {
+                "percentage": round(p.speaking_count / total * 100),
+                "speakingTime": p.speaking_time,
+                "count": p.speaking_count,
+            }
+            for p in state.participants
+        }
+        await manager.send_message(
+            meeting_id, {"type": "speaker_stats", "data": {"stats": stats}}
+        )
+
+    async def _enrich_transcript(entry: TranscriptEntry) -> None:
+        speaker = entry.speaker
+        confidence = entry.confidence
+        normalized_text = entry.text
+        if state.participants:
+            try:
+                result = await speaker_service.identify_speaker(entry.text)
+                speaker = result.get("speaker", "Unknown")
+                confidence = float(result.get("confidence", 0.0))
+                normalized_text = result.get("text_ko", entry.text)
+            except Exception as e:
+                logger.error(f"Speaker identification failed: {e}", exc_info=True)
+                speaker = "Unknown"
+                confidence = 0.0
+                normalized_text = entry.text
+        else:
+            try:
+                normalized_text = await speaker_service.normalize_text(entry.text)
+            except Exception as e:
+                logger.error(f"Text normalization failed: {e}", exc_info=True)
+                normalized_text = entry.text
+
+        participant_names = {p.name for p in state.participants}
+        if speaker not in participant_names and confidence < 0.5:
+            speaker = "Unknown"
+            confidence = 0.0
+
+        if speaker == entry.speaker and normalized_text == entry.text and confidence == entry.confidence:
+            return
+
+        entry.speaker = speaker
+        entry.text = normalized_text
+        entry.confidence = confidence
+
+        try:
+            await manager.send_message(
+                meeting_id,
+                {
+                    "type": "transcript_update",
+                    "data": {
+                        "id": entry.id,
+                        "speaker": entry.speaker,
+                        "text": entry.text,
+                        "confidence": entry.confidence,
+                    },
+                },
+            )
+        except Exception as e:
+            logger.warning(f"[{meeting_id}] Failed to send transcript update: {e}")
+
+        if _apply_speaker_stats(entry, entry.speaker):
+            try:
+                await _send_speaker_stats()
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to send speaker stats: {e}")
+
     async def add_transcript(
         text: str,
         latency_ms: float | None = None,
@@ -757,48 +842,16 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         logger.info(f"=== TRANSCRIPT RECEIVED: '{text}' ===")
 
         speaker = speaker_override or "Unknown"
-        confidence = 0.0
-        normalized_text = text
-        if not speaker_override and state.participants:
-            try:
-                result = await speaker_service.identify_speaker(text)
-                speaker = result.get("speaker", "Unknown")
-                confidence = float(result.get("confidence", 0.0))
-                normalized_text = result.get("text_ko", text)
-            except Exception as e:
-                logger.error(f"Speaker identification failed: {e}", exc_info=True)
-                speaker = "Unknown"
-                confidence = 0.0
-                normalized_text = text
-        elif not speaker_override:
-            try:
-                normalized_text = await speaker_service.normalize_text(text)
-            except Exception as e:
-                logger.error(f"Text normalization failed: {e}", exc_info=True)
-                normalized_text = text
-
-            participant_names = {p.name for p in state.participants}
-            if speaker not in participant_names:
-                if confidence < 0.5:
-                    speaker = "Unknown"
-                    confidence = 0.0
-
-        # 참석자 통계 업데이트
-        for p in state.participants:
-            if p.name == speaker:
-                p.speaking_count += 1
-                break
-
         entry = TranscriptEntry(
             id=f"tr_{uuid.uuid4().hex[:8]}",
             timestamp=datetime.utcnow().isoformat(),
             speaker=speaker,
-            text=normalized_text,
-            confidence=confidence,
+            text=text,
+            confidence=0.0 if speaker == "Unknown" else 1.0,
             latency_ms=(latency_ms or 0.0) + max(0.0, (asyncio.get_event_loop().time() - start_perf) * 1000),
         )
         state.transcript.append(entry)
-        await storage.append_transcript_entry(state, entry)
+        asyncio.create_task(storage.append_transcript_entry(state, entry))
 
         logger.info(f"Sending transcript to frontend for meeting: {meeting_id}")
         try:
@@ -809,20 +862,11 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         except Exception as e:
             logger.error(f"Failed to send transcript: {e}")
 
-        # 발언 통계 전송
-        total = sum(p.speaking_count for p in state.participants)
-        if total > 0:
-            stats = {
-                p.name: {
-                    "percentage": round(p.speaking_count / total * 100),
-                    "speakingTime": p.speaking_time,
-                    "count": p.speaking_count,
-                }
-                for p in state.participants
-            }
-            await manager.send_message(
-                meeting_id, {"type": "speaker_stats", "data": {"stats": stats}}
-            )
+        if speaker_override:
+            if _apply_speaker_stats(entry, speaker_override):
+                await _send_speaker_stats()
+        else:
+            asyncio.create_task(_enrich_transcript(entry))
 
     async def run_agents():
         # 멀티에이전트 병렬 분석 (SafetyOrchestrator)
