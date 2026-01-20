@@ -252,37 +252,50 @@ export default function MeetingPrepPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex justify-end">
-        <Dialog open={pasteModalOpen} onOpenChange={setPasteModalOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline">회의 붙여넣기</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle>회의 붙여넣기</DialogTitle>
-              <DialogDescription>
-                Google Calendar에서 복사한 내용을 그대로 붙여넣으면 자동으로 입력해요.
-              </DialogDescription>
-            </DialogHeader>
-            <Textarea
-              placeholder="예: 챗봇 화면 기획 논의&#10;1월 20일 (화요일)⋅AM 10:00~ 10:30&#10;참석자 2명"
-              value={pastedText}
-              onChange={(e) => setPastedText(e.target.value)}
-              rows={10}
-            />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPasteModalOpen(false)}>
-                취소
-              </Button>
-              <Button onClick={handlePasteSubmit} disabled={!pastedText.trim()}>
-                입력하기
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-      <Card>
+    <div className="max-w-5xl mx-auto space-y-6">
+      <Card className="border-0 bg-gradient-to-br from-amber-50 via-white to-emerald-50 shadow-sm">
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="text-2xl">회의 준비</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                회의 제목과 참석자, 원칙을 미리 정리해 생산적인 논의를 시작하세요.
+              </p>
+            </div>
+            <Dialog open={pasteModalOpen} onOpenChange={setPasteModalOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full sm:w-auto">
+                  회의 붙여넣기
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>회의 붙여넣기</DialogTitle>
+                  <DialogDescription>
+                    Google Calendar에서 복사한 내용을 그대로 붙여넣으면 자동으로 입력해요.
+                  </DialogDescription>
+                </DialogHeader>
+                <Textarea
+                  placeholder="예: 챗봇 화면 기획 논의&#10;1월 20일 (화요일)⋅AM 10:00~ 10:30&#10;참석자 2명"
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  rows={10}
+                />
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setPasteModalOpen(false)}>
+                    취소
+                  </Button>
+                  <Button onClick={handlePasteSubmit} disabled={!pastedText.trim()}>
+                    입력하기
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card className="border-none bg-muted/30 shadow-none">
         <CardHeader>
           <CardTitle>회의 제목</CardTitle>
         </CardHeader>
@@ -295,13 +308,13 @@ export default function MeetingPrepPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-none bg-muted/30 shadow-none">
           <CardHeader>
             <CardTitle>참석자</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 placeholder="이름"
                 value={newName}
@@ -312,11 +325,16 @@ export default function MeetingPrepPage() {
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
               />
-              <Button onClick={handleAddParticipant}>추가</Button>
+              <Button onClick={handleAddParticipant} className="sm:shrink-0">
+                추가
+              </Button>
             </div>
             <div className="space-y-2">
               {participants.map((p) => (
-                <div key={p.id} className="flex items-center justify-between bg-gray-100 p-2 rounded">
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between rounded-lg border border-muted/30 bg-white/80 px-3 py-2"
+                >
                   <span>{p.role ? `${p.name} (${p.role})` : p.name}</span>
                   <Button variant="ghost" size="sm" onClick={() => removeParticipant(p.id)}>
                     X
@@ -335,12 +353,20 @@ export default function MeetingPrepPage() {
             {principles.map((p) => (
               <div
                 key={p.id}
-                className={`p-3 rounded border cursor-pointer ${
+                className={`rounded-lg border px-3 py-2 transition ${
                   selectedPrinciples.includes(p.id)
-                    ? "bg-blue-50 border-blue-500"
-                    : "bg-white"
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-muted/30 bg-white"
                 }`}
                 onClick={() => togglePrinciple(p.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    togglePrinciple(p.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
               >
                 <div className="flex items-center gap-2">
                   <input
@@ -356,7 +382,7 @@ export default function MeetingPrepPage() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="border-none bg-muted/30 shadow-none">
         <CardHeader>
           <CardTitle>아젠다 & 참고 자료</CardTitle>
         </CardHeader>
