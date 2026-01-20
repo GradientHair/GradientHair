@@ -6,3 +6,7 @@ python3 "$ROOT_DIR/scripts/review_agent_safety_check.py" || {
   echo "[post-commit] review-agent-safety check failed." >&2
   exit 1
 }
+python3 "$ROOT_DIR/scripts/pr1_review_check.py" || {
+  echo "[post-commit] PR#1 format review check failed." >&2
+  exit 1
+}
