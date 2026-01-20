@@ -46,10 +46,20 @@ class StorageService:
         if not buffer:
             return
         meeting_dir = self.get_meeting_dir(meeting_id)
+        # Keep legacy file name for existing consumers
         with open(meeting_dir / "transcript_live.txt", "a", encoding="utf-8") as f:
+            f.writelines(buffer)
+        # New streaming log requested for agent 모드 출력
+        with open(meeting_dir / "transcription_live.txt", "a", encoding="utf-8") as f:
             f.writelines(buffer)
         self._transcript_buffers[meeting_id] = []
         self._transcript_last_flush[meeting_id] = asyncio.get_event_loop().time()
+
+    def append_transcription_stream(self, meeting_id: str, text: str) -> None:
+        """Append raw streaming text to transcription_live.txt (agent mode)."""
+        meeting_dir = self.get_meeting_dir(meeting_id)
+        with open(meeting_dir / "transcription_live.txt", "a", encoding="utf-8") as f:
+            f.write(text)
 
     async def append_transcript_entry(self, state: MeetingState, entry: TranscriptEntry):
         time_str = entry.timestamp[:19].replace("T", " ")

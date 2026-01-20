@@ -3,7 +3,11 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useMeetingStore } from "@/store/meeting-store";
 
-export function useWebSocket(meetingId: string) {
+type WebSocketOptions = {
+  onAgentModeStatus?: (status?: string) => void;
+};
+
+export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const isConnectingRef = useRef(false);
@@ -12,6 +16,7 @@ export function useWebSocket(meetingId: string) {
   const shouldReconnectRef = useRef(true);
   const lastConnectAttemptRef = useRef(0);
   const lastParticipantsHashRef = useRef<string>("");
+  const agentModeStatusHandler = options?.onAgentModeStatus;
 
   // Use refs for store functions to avoid dependency issues
   const storeRef = useRef(useMeetingStore.getState());
@@ -104,6 +109,29 @@ export function useWebSocket(meetingId: string) {
                 latencyMs: data.latencyMs ?? data.latency_ms,
               };
               store.addTranscript(normalized);
+              // clear streaming buffer if timestamps match
+              if (
+                store.transcriptStream &&
+                store.transcriptStream.timestamp === normalized.timestamp &&
+                store.transcriptStream.speaker === normalized.speaker
+              ) {
+                store.updateTranscriptStream({
+                  timestamp: normalized.timestamp,
+                  speaker: normalized.speaker,
+                  text: "",
+                });
+              }
+              break;
+            }
+            case "transcript_stream": {
+              const data = message.data || {};
+              if (typeof data.timestamp === "string" && typeof data.speaker === "string" && typeof data.chunk === "string") {
+                store.updateTranscriptStream({
+                  timestamp: data.timestamp,
+                  speaker: data.speaker,
+                  text: data.chunk,
+                });
+              }
               break;
             }
             case "intervention":
@@ -115,8 +143,15 @@ export function useWebSocket(meetingId: string) {
             case "stt_status":
               console.log("STT Status:", message.data.status);
               break;
+            case "agent_mode_status":
+              agentModeStatusHandler?.(message.data?.status);
+              console.log("Agent mode status:", message.data?.status);
+              break;
             case "error":
               console.error("Server error:", message.data);
+              if (typeof message.data?.code === "string" && message.data.code.startsWith("AGENT_MODE")) {
+                agentModeStatusHandler?.("stopped");
+              }
               break;
             default:
               console.log("Unknown message type:", message.type, message);
@@ -199,6 +234,24 @@ export function useWebSocket(meetingId: string) {
     }
   }, []);
 
+  const sendAgentModeCommand = useCallback(
+    (action: "start" | "stop", payload: Record<string, unknown> = {}) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        console.warn("WebSocket is not open; cannot send agent mode command");
+        return false;
+      }
+      wsRef.current.send(
+        JSON.stringify({
+          type: "agent_mode",
+          action,
+          data: payload,
+        })
+      );
+      return true;
+    },
+    []
+  );
+
   // Cleanup on unmount
   useEffect(() => {
     shouldReconnectRef.current = true;
@@ -215,5 +268,5 @@ export function useWebSocket(meetingId: string) {
     };
   }, []);
 
-  return { connect, disconnect, isConnected, sendAudio };
+  return { connect, disconnect, isConnected, sendAudio, sendAgentModeCommand };
 }

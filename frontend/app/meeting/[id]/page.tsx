@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,6 @@ import { SpeakerStats } from "@/components/speaker-stats";
 import { InterventionToast } from "@/components/intervention-toast";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAudioCapture } from "@/hooks/use-audio-capture";
-import { DemoSimulator } from "@/lib/demo-simulator";
 import { getApiBase } from "@/lib/api";
 
 export default function MeetingRoomPage() {
@@ -19,14 +18,24 @@ export default function MeetingRoomPage() {
   const meetingId = params.id as string;
   const apiBase = getApiBase();
 
-  const { status, title, startMeeting, endMeeting, agenda, addTranscript, addIntervention, updateSpeakerStats, participants, transcript } = useMeetingStore();
+  const { title, startMeeting, endMeeting, agenda, updateSpeakerStats, participants, transcript } = useMeetingStore();
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const demoRef = useRef<DemoSimulator | null>(null);
+  const [isAgentMode, setIsAgentMode] = useState(false);
   const initializedRef = useRef(false);
 
-  const { connect, disconnect, isConnected, sendAudio } = useWebSocket(meetingId);
+  const handleAgentModeStatus = useCallback((status?: string) => {
+    if (status === "started" || status === "already_running") {
+      setIsAgentMode(true);
+    }
+    if (status === "stopped") {
+      setIsAgentMode(false);
+    }
+  }, []);
+
+  const { connect, disconnect, isConnected, sendAudio, sendAgentModeCommand } = useWebSocket(meetingId, {
+    onAgentModeStatus: handleAgentModeStatus,
+  });
   const { start, stop, pause, resume, isRecording } = useAudioCapture(sendAudio);
 
   // Initialize meeting - only run once
@@ -57,15 +66,14 @@ export default function MeetingRoomPage() {
       clearInterval(timer);
       stop();
       disconnect();
-      demoRef.current?.stop();
       initializedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
 
-  // Update speaker stats in demo mode
+  // Update speaker stats when agent mode is driving simulated speech
   useEffect(() => {
-    if (isDemoMode && participants.length > 0) {
+    if (isAgentMode && participants.length > 0) {
       const speakerCounts: Record<string, number> = {};
       transcript.forEach((t) => {
         speakerCounts[t.speaker] = (speakerCounts[t.speaker] || 0) + 1;
@@ -85,7 +93,13 @@ export default function MeetingRoomPage() {
         updateSpeakerStats(stats);
       }
     }
-  }, [isDemoMode, transcript, participants, updateSpeakerStats]);
+  }, [isAgentMode, transcript, participants, updateSpeakerStats]);
+
+  useEffect(() => {
+    if (!isConnected && isAgentMode) {
+      setIsAgentMode(false);
+    }
+  }, [isConnected, isAgentMode]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -114,29 +128,36 @@ export default function MeetingRoomPage() {
     setIsMuted(!isMuted);
   };
 
-  const startDemoMode = () => {
-    setIsDemoMode(true);
-    demoRef.current = new DemoSimulator(
-      (entry) => addTranscript(entry),
-      (intervention) => addIntervention(intervention as Parameters<typeof addIntervention>[0])
-    );
-    demoRef.current.start();
+  const startAgentMode = () => {
+    if (participants.length === 0) {
+      console.warn("참석자가 없으면 에이전트 모드를 시작할 수 없습니다.");
+      return;
+    }
+    const sent = sendAgentModeCommand("start", {
+      agenda,
+      title: title || meetingId,
+      participants,
+    });
+    if (!sent) return;
+    setIsAgentMode(true);
   };
 
-  const stopDemoMode = () => {
-    setIsDemoMode(false);
-    demoRef.current?.stop();
+  const stopAgentMode = () => {
+    setIsAgentMode(false);
+    sendAgentModeCommand("stop");
   };
 
   const handleEndMeeting = async () => {
     stop();
-    demoRef.current?.stop();
+    if (isAgentMode) {
+      stopAgentMode();
+    }
 
     // 현재 상태 가져오기
     const state = useMeetingStore.getState();
 
     try {
-      // 데모 모드 또는 오프라인: 프론트엔드 데이터를 백엔드로 전송하여 저장
+      // 에이전트 모드 또는 오프라인: 프론트엔드 데이터를 백엔드로 전송하여 저장
       const response = await fetch(`${apiBase}/meetings/${meetingId}/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -174,8 +195,8 @@ export default function MeetingRoomPage() {
               REC
             </span>
             <span>{formatTime(elapsedTime)}</span>
-            <span className={isConnected ? "text-green-600" : isDemoMode ? "text-blue-600" : "text-yellow-600"}>
-              {isConnected ? "연결됨" : isDemoMode ? "데모 모드" : "오프라인"}
+            <span className={isConnected ? "text-green-600" : isAgentMode ? "text-blue-600" : "text-yellow-600"}>
+              {isConnected ? "연결됨" : isAgentMode ? "에이전트 모드" : "오프라인"}
             </span>
           </div>
         </div>
@@ -222,10 +243,10 @@ export default function MeetingRoomPage() {
           {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
         </Button>
         <Button
-          variant={isDemoMode ? "destructive" : "outline"}
-          onClick={isDemoMode ? stopDemoMode : startDemoMode}
+          variant={isAgentMode ? "destructive" : "outline"}
+          onClick={isAgentMode ? stopAgentMode : startAgentMode}
         >
-          {isDemoMode ? "데모 중지" : "데모 모드"}
+          {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
         </Button>
         <Button variant="destructive" onClick={handleEndMeeting}>
           회의 종료

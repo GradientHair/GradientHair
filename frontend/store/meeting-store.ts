@@ -14,6 +14,12 @@ interface TranscriptEntry {
   latencyMs?: number;
 }
 
+interface TranscriptStream {
+  timestamp: string;
+  speaker: string;
+  text: string;
+}
+
 interface Intervention {
   id: string;
   type: "TOPIC_DRIFT" | "PRINCIPLE_VIOLATION" | "PARTICIPATION_IMBALANCE" | "DECISION_STYLE";
@@ -44,6 +50,7 @@ interface MeetingState {
 
   // 진행 단계
   transcript: TranscriptEntry[];
+  transcriptStream: TranscriptStream | null;
   interventions: Intervention[];
   speakerStats: SpeakerStats;
   currentIntervention: Intervention | null;
@@ -57,6 +64,7 @@ interface MeetingState {
   setSelectedPrinciples: (principles: string[]) => void;
   startMeeting: (meetingId: string) => void;
   addTranscript: (entry: TranscriptEntry) => void;
+  updateTranscriptStream: (chunk: { timestamp: string; speaker: string; text: string }) => void;
   addIntervention: (intervention: Intervention) => void;
   dismissIntervention: () => void;
   updateSpeakerStats: (stats: SpeakerStats) => void;
@@ -72,6 +80,7 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   participants: [],
   selectedPrinciples: ["agile"],
   transcript: [],
+  transcriptStream: null,
   interventions: [],
   speakerStats: {},
   currentIntervention: null,
@@ -89,6 +98,28 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   startMeeting: (meetingId) => set({ meetingId, status: "in_progress" }),
   addTranscript: (entry) =>
     set((state) => ({ transcript: [...state.transcript, entry] })),
+  updateTranscriptStream: (chunk) =>
+    set((state) => {
+      if (
+        state.transcriptStream &&
+        state.transcriptStream.timestamp === chunk.timestamp &&
+        state.transcriptStream.speaker === chunk.speaker
+      ) {
+        return {
+          transcriptStream: {
+            ...state.transcriptStream,
+            text: state.transcriptStream.text + chunk.text,
+          },
+        };
+      }
+      return {
+        transcriptStream: {
+          timestamp: chunk.timestamp,
+          speaker: chunk.speaker,
+          text: chunk.text,
+        },
+      };
+    }),
   addIntervention: (intervention) =>
     set((state) => ({
       interventions: [...state.interventions, intervention],
@@ -105,9 +136,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
       agenda: "",
       participants: [],
       selectedPrinciples: ["agile"],
-      transcript: [],
-      interventions: [],
-      speakerStats: {},
-      currentIntervention: null,
-    }),
+    transcript: [],
+    transcriptStream: null,
+    interventions: [],
+    speakerStats: {},
+    currentIntervention: null,
+  }),
 }));

@@ -40,6 +40,7 @@ from services.principles_service import (
 )
 from agents.review_agent import ReviewOrchestratorAgent
 from agents.safety_orchestrator import SafetyOrchestrator
+from agents.persona_dialogue_agent import PersonaDialogueAgent
 
 app = FastAPI(title="MeetingMod API")
 
@@ -333,7 +334,7 @@ async def end_meeting(meeting_id: str):
 
 @app.post("/api/v1/meetings/{meeting_id}/save")
 async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
-    """데모 모드에서 프론트엔드 데이터를 저장"""
+    """에이전트/오프라인 모드에서 프론트엔드 데이터를 저장"""
     from models.meeting import Intervention, InterventionType
 
     participants = [
@@ -608,6 +609,9 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     speaker_service.set_participants(state.participants)
     safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
+    persona_agent = PersonaDialogueAgent(stream=False)
+    agent_mode_task: asyncio.Task | None = None
+    agent_mode_enabled = False
 
     def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
         existing_by_id = {p.id: p for p in existing}
@@ -630,6 +634,23 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 updated.append(Participant(id=participant_id, name=name, role=role))
 
         return updated
+
+    async def send_speaker_stats():
+        """Send speaker stats to frontend based on current state."""
+        total = sum(p.speaking_count for p in state.participants)
+        if total <= 0:
+            return
+        stats = {
+            p.name: {
+                "percentage": round(p.speaking_count / total * 100),
+                "speakingTime": p.speaking_time,
+                "count": p.speaking_count,
+            }
+            for p in state.participants
+        }
+        await manager.send_message(
+            meeting_id, {"type": "speaker_stats", "data": {"stats": stats}}
+        )
 
     async def on_transcript(text: str, latency_ms: float | None = None):
         start_perf = asyncio.get_event_loop().time()
@@ -688,20 +709,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         except Exception as e:
             logger.error(f"Failed to send transcript: {e}")
 
-        # 발언 통계 전송
-        total = sum(p.speaking_count for p in state.participants)
-        if total > 0:
-            stats = {
-                p.name: {
-                    "percentage": round(p.speaking_count / total * 100),
-                    "speakingTime": p.speaking_time,
-                    "count": p.speaking_count,
-                }
-                for p in state.participants
-            }
-            await manager.send_message(
-                meeting_id, {"type": "speaker_stats", "data": {"stats": stats}}
-            )
+        await send_speaker_stats()
 
     async def on_speech_end():
         # 멀티에이전트 병렬 분석 (SafetyOrchestrator)
@@ -776,6 +784,106 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 },
             ))
 
+    async def run_agent_mode():
+        nonlocal agent_mode_enabled
+        loop = asyncio.get_running_loop()
+        logger.info(f"[{meeting_id}] Agent mode started")
+        while agent_mode_enabled:
+            if not state.participants:
+                await asyncio.sleep(1.0)
+                continue
+
+            for _ in range(len(state.participants)):
+                prefix_written = False
+                ts = datetime.utcnow().isoformat()
+
+                def stream_callback(speaker_name: str, chunk: str):
+                    nonlocal prefix_written, ts
+                    if not prefix_written:
+                        storage.append_transcription_stream(
+                            state.meeting_id, f"\n[{ts}] {speaker_name}: "
+                        )
+                        prefix_written = True
+                    storage.append_transcription_stream(state.meeting_id, chunk)
+                    asyncio.run_coroutine_threadsafe(
+                        manager.send_message(
+                            meeting_id,
+                            {
+                                "type": "transcript_stream",
+                                "data": {
+                                    "timestamp": ts,
+                                    "speaker": speaker_name,
+                                    "chunk": chunk,
+                                },
+                            },
+                        ),
+                        loop,
+                    )
+
+                try:
+                    utterances = await asyncio.to_thread(
+                        persona_agent.generate_dialogue,
+                        state,
+                        state.transcript[-12:],
+                        1,
+                        None,
+                        True,
+                        stream_callback,
+                    )
+                except Exception as e:
+                    logger.error(f"[{meeting_id}] Agent mode generation failed: {e}", exc_info=True)
+                    await manager.send_message(
+                        meeting_id,
+                        {
+                            "type": "error",
+                            "data": {
+                                "code": "AGENT_MODE_FAILURE",
+                                "message": "에이전트 모드 대화 생성에 실패했습니다. 환경 설정을 확인해주세요.",
+                                "recoverable": False,
+                            },
+                        },
+                    )
+                    agent_mode_enabled = False
+                    break
+
+                if not utterances:
+                    await asyncio.sleep(0.5)
+                    continue
+
+                utt = utterances[0]
+                if prefix_written:
+                    storage.append_transcription_stream(state.meeting_id, "\n")
+
+                entry = TranscriptEntry(
+                    id=f"agent_{uuid.uuid4().hex[:8]}",
+                    timestamp=ts,
+                    speaker=utt.speaker,
+                    text=utt.text,
+                    confidence=1.0,
+                    latency_ms=0.0,
+                )
+                for p in state.participants:
+                    if p.name == entry.speaker:
+                        p.speaking_count += 1
+                        break
+
+                state.transcript.append(entry)
+                await storage.append_transcript_entry(state, entry)
+                try:
+                    await manager.send_message(
+                        meeting_id,
+                        {"type": "transcript", "data": entry.__dict__}
+                    )
+                except Exception as e:
+                    logger.error(f"[{meeting_id}] Failed to send agent transcript: {e}")
+
+                await send_speaker_stats()
+                await asyncio.sleep(0.8)
+
+            await asyncio.sleep(1.0)
+
+        logger.info(f"[{meeting_id}] Agent mode stopped")
+
     stt_connected = False
     try:
         await stt_service.connect(
@@ -822,6 +930,66 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         while True:
             data = await websocket.receive_json()
             message_type = data.get("type")
+            if message_type == "agent_mode":
+                action = data.get("action")
+                payload = data.get("data") or {}
+
+                participants_payload = payload.get("participants") or []
+                if isinstance(participants_payload, list) and participants_payload:
+                    updated = _coerce_participants(participants_payload, state.participants)
+                    if updated:
+                        state.participants = updated
+                        speaker_service.set_participants(state.participants)
+
+                agenda_payload = payload.get("agenda")
+                if isinstance(agenda_payload, str) and agenda_payload:
+                    state.agenda = agenda_payload
+
+                title_payload = payload.get("title")
+                if isinstance(title_payload, str) and title_payload:
+                    state.title = title_payload
+
+                if action == "start":
+                    if not persona_agent.client or not persona_agent.model:
+                        await manager.send_message(
+                            meeting_id,
+                            {
+                                "type": "error",
+                                "data": {
+                                    "code": "AGENT_MODE_UNAVAILABLE",
+                                    "message": "OPENAI_API_KEY가 설정되어 있지 않아 에이전트 모드를 사용할 수 없습니다.",
+                                    "recoverable": False,
+                                },
+                            },
+                        )
+                        continue
+
+                    if agent_mode_task and not agent_mode_task.done():
+                        await manager.send_message(
+                            meeting_id,
+                            {"type": "agent_mode_status", "data": {"status": "already_running"}},
+                        )
+                        continue
+
+                    agent_mode_enabled = True
+                    agent_mode_task = asyncio.create_task(run_agent_mode())
+                    await manager.send_message(
+                        meeting_id,
+                        {"type": "agent_mode_status", "data": {"status": "started"}},
+                    )
+                elif action == "stop":
+                    agent_mode_enabled = False
+                    if agent_mode_task and not agent_mode_task.done():
+                        agent_mode_task.cancel()
+                        try:
+                            await agent_mode_task
+                        except asyncio.CancelledError:
+                            pass
+                    await manager.send_message(
+                        meeting_id,
+                        {"type": "agent_mode_status", "data": {"status": "stopped"}},
+                    )
+                continue
             if message_type == "participants":
                 raw_participants = data.get("data", [])
                 if isinstance(raw_participants, list) and raw_participants:
@@ -850,12 +1018,26 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                     logger.warning(f"[{meeting_id}] STT not connected, audio chunk dropped")
     except WebSocketDisconnect as e:
         logger.info(f"WebSocket disconnected for meeting {meeting_id} (code={getattr(e, 'code', 'unknown')})")
+        agent_mode_enabled = False
+        if agent_mode_task and not agent_mode_task.done():
+            agent_mode_task.cancel()
+            try:
+                await agent_mode_task
+            except asyncio.CancelledError:
+                pass
         manager.disconnect(meeting_id)
         await stt_service.disconnect()
         await storage.save_transcript(state)
         await storage.save_interventions(state)
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
+        agent_mode_enabled = False
+        if agent_mode_task and not agent_mode_task.done():
+            agent_mode_task.cancel()
+            try:
+                await agent_mode_task
+            except asyncio.CancelledError:
+                pass
         manager.disconnect(meeting_id)
         await stt_service.disconnect()
         await storage.save_transcript(state)

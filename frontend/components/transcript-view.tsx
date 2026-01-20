@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useMeetingStore } from "@/store/meeting-store";
 
 export function TranscriptView() {
-  const { transcript, interventions } = useMeetingStore();
+  const { transcript, interventions, transcriptStream } = useMeetingStore();
   const bottomRef = useRef<HTMLDivElement>(null);
   const recentLatencies = transcript
     .map((t) => t.latencyMs)
@@ -57,6 +57,16 @@ export function TranscriptView() {
           );
         }
       })}
+      {transcriptStream && transcriptStream.text && (
+        <div className="text-sm italic text-gray-600">
+          <span className="text-gray-500">
+            [{new Date(transcriptStream.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}]
+          </span>{" "}
+          <span className="font-semibold">{transcriptStream.speaker}:</span>{" "}
+          <span>{transcriptStream.text}</span>
+          <span className="ml-1 animate-pulse">▌</span>
+        </div>
+      )}
       <div ref={bottomRef} />
     </div>
   );

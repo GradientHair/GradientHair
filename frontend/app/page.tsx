@@ -163,7 +163,7 @@ export default function MeetingPrepPage() {
         router.push(`/meeting/${data.id ?? meetingId}`);
       }
     } catch {
-      // 데모 모드에서 백엔드 없이도 동작
+      // 에이전트 모드/오프라인 환경에서 백엔드 없이도 동작
       router.push(`/meeting/${meetingId}`);
     }
   };
