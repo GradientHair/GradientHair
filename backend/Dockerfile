@@ -2,15 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-  && rm -rf /var/lib/apt/lists/*
+# uv 설치
+RUN pip install uv
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 프로젝트 파일 복사
+COPY pyproject.toml uv.lock ./
 
-COPY app ./app
+# 의존성 설치
+RUN uv sync
 
-ENV PYTHONUNBUFFERED=1
+# 소스 복사
+COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 포트 노출
+EXPOSE 8000
+
+# 개발 서버 실행 (핫 리로드 활성화)
+CMD ["uv", "run", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

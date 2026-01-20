@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        #status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #90EE90; }
+        .disconnected { background: #FFB6C1; }
+        #log { background: #f0f0f0; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h1>MeetingMod Audio Test</h1>
+
+    <div id="status" class="disconnected">WebSocket: Disconnected</div>
+
+    <div>
+        <button id="startBtn" onclick="startAudio()">Start Microphone</button>
+        <button id="stopBtn" onclick="stopAudio()" disabled>Stop</button>
+    </div>
+
+    <p>Audio Chunks Sent: <span id="chunkCount">0</span></p>
+    <p>Transcripts Received: <span id="transcriptCount">0</span></p>
+
+    <h3>Log:</h3>
+    <div id="log"></div>
+
+    <script>
+        let ws = null;
+        let audioContext = null;
+        let processor = null;
+        let stream = null;
+        let chunkCount = 0;
+        let transcriptCount = 0;
+
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${msg}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            status.textContent = 'WebSocket: ' + (connected ? 'Connected' : 'Disconnected');
+            status.className = connected ? 'connected' : 'disconnected';
+        }
+
+        // Connect WebSocket
+        function connectWS() {
+            const meetingId = 'audio-test-' + Date.now();
+            ws = new WebSocket('ws://localhost:8000/ws/meetings/' + meetingId);
+
+            ws.onopen = () => {
+                log('WebSocket connected!');
+                updateStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                log('Received: ' + JSON.stringify(data));
+
+                if (data.type === 'transcript') {
+                    transcriptCount++;
+                    document.getElementById('transcriptCount').textContent = transcriptCount;
+                    log('TRANSCRIPT: ' + data.data.text);
+                }
+            };
+
+            ws.onerror = (e) => {
+                log('WebSocket error!');
+                updateStatus(false);
+            };
+
+            ws.onclose = () => {
+                log('WebSocket closed');
+                updateStatus(false);
+            };
+        }
+
+        // Convert Float32 to Int16 (PCM16)
+        function floatTo16BitPCM(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32Array[i]));
+                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return int16Array;
+        }
+
+        // Convert Int16Array to base64
+        function int16ToBase64(int16Array) {
+            const uint8Array = new Uint8Array(int16Array.buffer);
+            let binary = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+                binary += String.fromCharCode(uint8Array[i]);
+            }
+            return btoa(binary);
+        }
+
+        async function startAudio() {
+            try {
+                // Connect WebSocket first
+                connectWS();
+                await new Promise(r => setTimeout(r, 1000)); // Wait for connection
+
+                // Get microphone
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 24000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                log('Microphone access granted');
+
+                // Create audio context
+                audioContext = new AudioContext({ sampleRate: 24000 });
+                const source = audioContext.createMediaStreamSource(stream);
+
+                // Create processor
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                let buffer = [];
+
+                processor.onaudioprocess = (event) => {
+                    const inputData = event.inputBuffer.getChannelData(0);
+                    const pcm16 = floatTo16BitPCM(inputData);
+                    buffer.push(pcm16);
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                // Send audio every 250ms
+                setInterval(() => {
+                    if (buffer.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        // Combine buffer
+                        const totalLength = buffer.reduce((acc, arr) => acc + arr.length, 0);
+                        const combined = new Int16Array(totalLength);
+                        let offset = 0;
+                        for (const chunk of buffer) {
+                            combined.set(chunk, offset);
+                            offset += chunk.length;
+                        }
+                        buffer = [];
+
+                        // Send
+                        const base64 = int16ToBase64(combined);
+                        ws.send(JSON.stringify({
+                            type: 'audio',
+                            data: base64,
+                            timestamp: Date.now()
+                        }));
+
+                        chunkCount++;
+                        document.getElementById('chunkCount').textContent = chunkCount;
+
+                        if (chunkCount % 10 === 0) {
+                            log('Sent ' + chunkCount + ' audio chunks (' + base64.length + ' bytes each)');
+                        }
+                    }
+                }, 250);
+
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                log('Audio capture started! Speak now...');
+
+            } catch (error) {
+                log('Error: ' + error.message);
+            }
+        }
+
+        function stopAudio() {
+            if (processor) processor.disconnect();
+            if (audioContext) audioContext.close();
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            if (ws) ws.close();
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            log('Stopped');
+        }
+    </script>
+</body>
+</html>

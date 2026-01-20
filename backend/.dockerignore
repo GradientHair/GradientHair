@@ -1,0 +1,49 @@
+# Virtual environments
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*$py.class
+.Python
+
+# Distribution / packaging
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.nox
+
+# Environment files (loaded via docker-compose env_file)
+.env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Jupyter
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache

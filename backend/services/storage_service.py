@@ -1,0 +1,83 @@
+from datetime import datetime
+from pathlib import Path
+from models.meeting import MeetingState
+
+
+class StorageService:
+    def __init__(self, base_path: str | None = None):
+        if base_path:
+            self.base_path = Path(base_path)
+        else:
+            # Docker 환경: /app/meetings, 로컬 환경: 프로젝트 루트/meetings
+            import os
+            if os.path.exists("/app/meetings"):
+                self.base_path = Path("/app/meetings")
+            else:
+                self.base_path = Path(__file__).parent.parent.parent / "meetings"
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+    def get_meeting_dir(self, meeting_id: str) -> Path:
+        meeting_dir = self.base_path / meeting_id
+        meeting_dir.mkdir(exist_ok=True)
+        return meeting_dir
+
+    async def save_preparation(self, state: MeetingState):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        content = f"""# 회의 준비 자료
+
+## 회의 정보
+- **제목**: {state.title}
+- **일시**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+## 참석자
+| 이름 | 역할 |
+|------|------|
+"""
+        for p in state.participants:
+            content += f"| {p.name} | {p.role} |\n"
+
+        content += f"\n## 아젠다\n{state.agenda}\n"
+
+        with open(meeting_dir / "preparation.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_transcript(self, state: MeetingState):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        content = f"""# 회의 녹취록
+
+회의: {state.title}
+일시: {state.started_at.strftime('%Y-%m-%d %H:%M') if state.started_at else 'N/A'}
+
+---
+
+"""
+        for entry in state.transcript:
+            time_str = entry.timestamp[:19].replace("T", " ")
+            content += f"[{time_str}] **{entry.speaker}**: {entry.text}\n\n"
+
+        with open(meeting_dir / "transcript.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_interventions(self, state: MeetingState):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        content = f"""# Agent 개입 기록
+
+회의: {state.title}
+
+---
+
+"""
+        for idx, inv in enumerate(state.interventions, 1):
+            content += f"""## 개입 #{idx}
+- **시간**: {inv.timestamp[:19].replace("T", " ")}
+- **유형**: {inv.intervention_type.value}
+- **메시지**: {inv.message}
+"""
+            if inv.violated_principle:
+                content += f"- **위반 원칙**: {inv.violated_principle}\n"
+            if inv.parking_lot_item:
+                content += f"- **Parking Lot**: {inv.parking_lot_item}\n"
+            content += "\n"
+
+        with open(meeting_dir / "interventions.md", "w", encoding="utf-8") as f:
+            f.write(content)
