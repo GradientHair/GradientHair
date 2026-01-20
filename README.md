@@ -73,6 +73,22 @@ meetings/
     └── action-items.md
 ```
 
+## 예시 회의 (샘플)
+
+**회의명:** 챗봇 화면 기획 논의  
+**일시:** 1월 20일 (화요일) ⋅ AM 10:00 ~ 10:30  
+**참석자:** 2명 (초대 수락 1명, 회신 대기 1명)
+
+**참석자 정보**
+- Jongseob Jeon (Aiden) — 주최자, hunhoon21@gmail.com
+
+**아젠다**
+안녕하세요 훈철님  
+이전에 comm 한 것 처럼 개발 환경 초안에 대해서 논의하는 미팅입니다.
+
+**회의 메모**
+- Jongseob Jeon: 한가함
+
 ## 기술 스택
 
 - Backend: Python 3.12, FastAPI
