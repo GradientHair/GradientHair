@@ -89,24 +89,25 @@ LLM 출력 정합성은 3단계로 보강한다(함수 호출/structured output 
 ## 아키텍처
 
 ```
-Audio -> Realtime STT -> Meeting State Store
-                    |
-                    v
-             Triage Agent
-       (Intent 분류 / Handoff)
-        /       |        \
-   Topic     Principle  Participation
-   Agent        Agent       Agent
-        \       |        /
-          Intervention Merge
-                 |
-            Alert + Toast
+Meeting (Live):
+  Audio -> Realtime STT -> Meeting State Store
+                      |
+                      v
+               Triage Agent
+         (Intent 분류 / Handoff)
+          /       |        \
+     Topic     Principle  Participation
+     Agent        Agent       Agent
+          \       |        /
+            Intervention Merge
+                   |
+              Alert + Toast
 
-LLM Calls:
-  Model Router -> Structured Output Runner
-                 (Pydantic parse + error feedback retry + optional DSPy)
+  LLM Calls:
+    Model Router -> Structured Output Runner
+                   (Pydantic parse + error feedback retry + optional DSPy)
 
-Post-meeting:
+Post-meeting (Async):
   Review Agent -> summary/action-items/feedback.md
   Diarize Job  -> transcript_diarized.md/.json
 ```
