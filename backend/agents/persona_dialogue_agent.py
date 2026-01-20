@@ -96,6 +96,7 @@ class PersonaDialogueAgent:
         recent_transcript: list[TranscriptEntry],
         turns: int = 3,
         seed: Optional[int] = None,
+        turn_offset: int = 0,
         stream: Optional[bool] = None,
         stream_callback: Optional[Callable[[str, str], None]] = None,
     ) -> list[PersonaDialogueTurn]:
@@ -116,7 +117,7 @@ class PersonaDialogueAgent:
         # 각 턴마다 1개씩 발언 생성
         for turn_idx in range(turns):
             # 현재 턴의 발언 계획 (1개만)
-            planned_turn = self._plan_single_turn(assignments, turn_idx, rng)
+            planned_turn = self._plan_single_turn(assignments, turn_offset + turn_idx, rng)
 
             # 최근 대화에 이전 생성된 발언들 포함
             # Build a temporary transcript that mimics real entries to keep the prompt format consistent

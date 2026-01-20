@@ -141,9 +141,10 @@ export default function MeetingPrepPage() {
     }
   };
 
-  const handleStartMeeting = async () => {
+  const handleStartMeeting = async (mode: "audio" | "agent") => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const meetingId = `${timestamp}-${title.toLowerCase().replace(/\s+/g, "-")}`;
+    const modeQuery = `?mode=${mode}`;
 
     // API 호출하여 회의 생성
     try {
@@ -160,11 +161,11 @@ export default function MeetingPrepPage() {
 
       if (response.ok) {
         const data = (await response.json()) as { id?: string };
-        router.push(`/meeting/${data.id ?? meetingId}`);
+        router.push(`/meeting/${data.id ?? meetingId}${modeQuery}`);
       }
     } catch {
       // 에이전트 모드/오프라인 환경에서 백엔드 없이도 동작
-      router.push(`/meeting/${meetingId}`);
+      router.push(`/meeting/${meetingId}${modeQuery}`);
     }
   };
 
@@ -495,13 +496,21 @@ export default function MeetingPrepPage() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button
               size="lg"
-              onClick={handleStartMeeting}
+              onClick={() => handleStartMeeting("audio")}
               disabled={!title || participants.length === 0}
             >
-              회의 시작
+              오디오 회의 시작
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => handleStartMeeting("agent")}
+              disabled={!title || participants.length === 0}
+            >
+              에이전트 회의 시작
             </Button>
           </div>
         </TabsContent>
