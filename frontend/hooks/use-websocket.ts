@@ -5,6 +5,7 @@ import { useMeetingStore } from "@/store/meeting-store";
 
 type WebSocketOptions = {
   onAgentModeStatus?: (status?: string) => void;
+  mode?: "audio" | "agent";
 };
 
 export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
@@ -17,6 +18,7 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
   const lastConnectAttemptRef = useRef(0);
   const lastParticipantsHashRef = useRef<string>("");
   const agentModeStatusHandler = options?.onAgentModeStatus;
+  const meetingMode = options?.mode;
 
   // Use refs for store functions to avoid dependency issues
   const storeRef = useRef(useMeetingStore.getState());
@@ -82,7 +84,8 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
       typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
     const defaultWsUrl = `${defaultProtocol}://${defaultHost}:8000`;
     const wsBase = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
-    const fullUrl = `${wsBase}/ws/meetings/${encodeURIComponent(meetingId)}`;
+    const modeQuery = meetingMode ? `?mode=${encodeURIComponent(meetingMode)}` : "";
+    const fullUrl = `${wsBase}/ws/meetings/${encodeURIComponent(meetingId)}${modeQuery}`;
 
     const healthUrl = wsBase
       .replace(/^wss:\/\//, "https://")
@@ -145,11 +148,8 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
                 store.transcriptStream.timestamp === normalized.timestamp &&
                 store.transcriptStream.speaker === normalized.speaker
               ) {
-                store.updateTranscriptStream({
-                  timestamp: normalized.timestamp,
-                  speaker: normalized.speaker,
-                  text: "",
-                });
+                // Set transcriptStream to null to completely clear it
+                useMeetingStore.setState({ transcriptStream: null });
               }
               break;
             }

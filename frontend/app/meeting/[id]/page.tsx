@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMeetingStore } from "@/store/meeting-store";
@@ -15,14 +15,18 @@ import { getApiBase } from "@/lib/api";
 export default function MeetingRoomPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const meetingId = params.id as string;
   const apiBase = getApiBase();
+  const initialMode = searchParams.get("mode") === "agent" ? "agent" : "audio";
+  const isAgentMeeting = initialMode === "agent";
 
   const { title, startMeeting, endMeeting, agenda, updateSpeakerStats, participants, transcript } = useMeetingStore();
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isAgentMode, setIsAgentMode] = useState(false);
   const initializedRef = useRef(false);
+  const autoAgentStartedRef = useRef(false);
 
   const handleAgentModeStatus = useCallback((status?: string) => {
     if (status === "started" || status === "already_running") {
@@ -35,6 +39,7 @@ export default function MeetingRoomPage() {
 
   const { connect, disconnect, isConnected, sendAudio, sendAgentModeCommand } = useWebSocket(meetingId, {
     onAgentModeStatus: handleAgentModeStatus,
+    mode: initialMode,
   });
   const { start, stop, pause, resume, isRecording } = useAudioCapture(sendAudio);
 
@@ -51,10 +56,12 @@ export default function MeetingRoomPage() {
     // Connect to backend WebSocket
     connect();
 
-    // Start audio capture
-    start().catch((error) => {
-      console.log("Audio capture not available:", error);
-    });
+    if (initialMode === "audio") {
+      // Start audio capture
+      start().catch((error) => {
+        console.log("Audio capture not available:", error);
+      });
+    }
 
     // Timer for elapsed time
     const timer = setInterval(() => {
@@ -69,7 +76,23 @@ export default function MeetingRoomPage() {
       initializedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetingId]);
+  }, [meetingId, initialMode, start, connect]);
+
+  useEffect(() => {
+    if (initialMode !== "agent") return;
+    if (autoAgentStartedRef.current) return;
+    if (!isConnected) return;
+    if (participants.length === 0) return;
+
+    const sent = sendAgentModeCommand("start", {
+      agenda,
+      title: title || meetingId,
+      participants,
+    });
+    if (!sent) return;
+    autoAgentStartedRef.current = true;
+    setIsAgentMode(true);
+  }, [agenda, initialMode, isConnected, meetingId, participants, sendAgentModeCommand, title]);
 
   // Update speaker stats when agent mode is driving simulated speech
   useEffect(() => {
@@ -242,15 +265,19 @@ export default function MeetingRoomPage() {
 
       {/* 컨트롤 버튼 */}
       <div className="flex justify-center gap-4 mt-6">
-        <Button variant="outline" onClick={handleMuteToggle}>
-          {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
-        </Button>
-        <Button
-          variant={isAgentMode ? "destructive" : "outline"}
-          onClick={isAgentMode ? stopAgentMode : startAgentMode}
-        >
-          {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
-        </Button>
+        {!isAgentMeeting && (
+          <Button variant="outline" onClick={handleMuteToggle}>
+            {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
+          </Button>
+        )}
+        {isAgentMeeting && (
+          <Button
+            variant={isAgentMode ? "destructive" : "outline"}
+            onClick={isAgentMode ? stopAgentMode : startAgentMode}
+          >
+            {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
+          </Button>
+        )}
         <Button variant="destructive" onClick={handleEndMeeting}>
           회의 종료
         </Button>
