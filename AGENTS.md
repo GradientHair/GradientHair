@@ -31,13 +31,34 @@
 | Codex CLI에서 복잡한 작업 | multi-agent-guide 참조 → Orchestrator-Worker 패턴 |
 | 단순한 단일 작업 | 직접 수행 (multi-agent 불필요) |
 
+## Skills & Agent Patterns (Codex 참고용)
+
+Codex가 작업 시 참고해야 할 스킬/패턴 요약입니다.
+
+### 포함된 Skills
+
+- `skills/multi-agent-guide/skill.md`
+  - Orchestrator-Worker 패턴 개요, Collab Tools(spawn_agent, send_input, wait, close_agent) 사용법
+  - 병렬 처리, 코드 리뷰, TDD, 대규모 리팩토링 패턴 및 Anti-patterns
+- `skills/openai-agents-python/`
+  - OpenAI Agents Python 예제 및 활용 가이드
+
+### DSPy Validation (Optional)
+
+- `DSPY_VALIDATE=1` 환경 변수로 LLM structured output 추가 검증 활성화
+- Pydantic schema 통과 후 DSPy 검증을 2차로 수행
+- backend 환경에 `dspy` 설치 필요
+
 ## Required Workflow (Always)
+
+- 모든 개발은 별도 브랜치에서 수행하고 PR로 병합한다.
 
 1. 개발 완료 후, 동작 테스트를 먼저 수행한다.  
    - `scripts/run_smoke.sh` 실행 → `.last_test_run` 갱신
 2. 커밋은 에이전트가 직접 수행한다. (사람은 수행하지 않음)
 3. 커밋 직후, `review-agent-safety` 기준을 자동 검사한다.  
    - `scripts/review_agent_safety_check.py` 실행 (score 출력 확인)
+   - `scripts/pr1_review_check.py` 실행 (PR #1 format score)
 
 - 훅 템플릿 설치: `scripts/install_hooks.sh` 실행
 - (선택) DSPy 검증 활성화: `DSPY_VALIDATE=1` 환경 변수 설정 (backend에 dspy 설치 필요)
@@ -45,6 +66,22 @@
 이 워크플로우는 git hook으로 강제된다:
 - `pre-commit`: 최근 테스트 스탬프 확인
 - `post-commit`: review-agent-safety 기준 검사
+
+## Local Dev (Codex 참고용)
+
+```bash
+# 환경 설정
+# (backend) OPENAI_API_KEY 설정 후 실행
+make env-backend
+make env-frontend
+
+# 의존성 설치
+make setup-backend
+make setup-frontend
+
+# 실행
+make run-local-dev
+```
 
 ## Playwright UI Demo Flow (Shareable)
 

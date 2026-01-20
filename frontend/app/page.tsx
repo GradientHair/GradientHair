@@ -142,7 +142,8 @@ export default function MeetingPrepPage() {
   };
 
   const handleStartMeeting = async () => {
-    const meetingId = `${new Date().toISOString().split("T")[0]}-${title.toLowerCase().replace(/\s+/g, "-")}`;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const meetingId = `${timestamp}-${title.toLowerCase().replace(/\s+/g, "-")}`;
 
     // API 호출하여 회의 생성
     try {
@@ -158,7 +159,8 @@ export default function MeetingPrepPage() {
       });
 
       if (response.ok) {
-        router.push(`/meeting/${meetingId}`);
+        const data = (await response.json()) as { id?: string };
+        router.push(`/meeting/${data.id ?? meetingId}`);
       }
     } catch {
       // 데모 모드에서 백엔드 없이도 동작
