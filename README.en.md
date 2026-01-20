@@ -79,3 +79,7 @@ Project-level agent configuration file with guidance for complex multi-agent wor
 ## References
 
 - [Codex CLI GitHub](https://github.com/openai/codex)
+
+## Korean README
+
+- `README.ko.md`

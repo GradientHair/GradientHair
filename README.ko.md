@@ -79,3 +79,7 @@ OpenAI Agents Python 사용 예제와 스킬 가이드입니다.
 ## 참고 자료
 
 - [Codex CLI GitHub](https://github.com/openai/codex)
+
+## English README
+
+- `README.en.md`
