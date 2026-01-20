@@ -167,14 +167,154 @@ make run-local-dev
 - 전종섭: App 개발
 - 김재연: Agent 개발
 
-## AGENTS.md
+---
 
-프로젝트 수준의 에이전트 설정 파일입니다. 복잡한 작업에 대한 multi-agent workflow 가이드를 제공합니다.
+# 개발자 가이드
 
-## 참고 자료
+## 프로젝트 구조
 
-- [Codex CLI GitHub](https://github.com/openai/codex)
+```
+GradientHair/
+├── frontend/                 # Next.js 앱
+│   ├── app/                  # App Router 페이지
+│   ├── components/           # React 컴포넌트
+│   └── lib/                  # 유틸리티
+│
+├── backend/                  # Python 서버
+│   ├── server.py             # FastAPI 메인 서버
+│   ├── agents/               # Multi-Agent 구현
+│   ├── services/             # 비즈니스 로직
+│   └── models/               # 데이터 모델
+│
+├── docker/                   # Docker 설정
+│   └── docker-compose.yml
+│
+├── meetings/                 # 회의 데이터 저장
+│   └── {meeting-id}/
+│
+├── principles/               # 회의 원칙 템플릿
+│   ├── agile.md
+│   └── aws-leadership.md
+│
+└── docs/                     # 문서
+```
+
+## 환경 설정
+
+### 필수 요구사항
+
+- Node.js 18+
+- Python 3.12+
+- OpenAI API Key
+- Docker (데모 실행 시)
+
+### Backend 설정
+
+```bash
+make env-backend
+# backend/.env 수정: OPENAI_API_KEY=your_key_here
+```
+
+### Frontend 설정
+
+```bash
+make env-frontend
+# frontend/.env.local 자동 생성
+```
+
+## 백엔드 기술 스택
+
+| 기술 | 용도 |
+|------|------|
+| FastAPI | REST API, WebSocket 서버 |
+| OpenAI Realtime API | 실시간 음성 인식 (STT) |
+| OpenAI Agents SDK | Multi-Agent 오케스트레이션 |
+| OpenAI SDK | LLM 호출 (GPT-4) |
+
+## 프론트엔드 기술 스택
+
+| 기술 | 용도 |
+|------|------|
+| Next.js | React 프레임워크 |
+| React | UI 라이브러리 |
+| Tailwind CSS | 스타일링 |
+| shadcn/ui | UI 컴포넌트 |
+| Zustand | 상태 관리 |
+
+### 주요 페이지
+
+- `/` - 회의 준비 페이지 (아젠다, 참석자 입력)
+- `/meeting/{id}` - 회의 진행 페이지 (실시간 자막, 개입 알림)
+- `/review/{id}` - 회의 결과 페이지 (요약, Action Items)
+
+## Multi-Agent 시스템
+
+### Agent 구성
+
+| Agent | 역할 |
+|-------|------|
+| Triage Agent | 발화 의도 분류, 적절한 Agent로 핸드오프 |
+| Topic Agent | 주제 이탈 감지 및 복귀 유도 |
+| Principle Agent | 회의 원칙 위반 감지 및 지적 |
+| Participation Agent | 발언 불균형 감지 및 참여 독려 |
+| Review Agent | 회의 후 요약, Action Item, 피드백 생성 |
+
+### 개입 유형
+
+- `TOPIC_DRIFT` - 주제 이탈 시 복귀 유도
+- `PRINCIPLE_VIOLATION` - 회의 원칙 위반 지적
+- `PARTICIPATION_IMBALANCE` - 발언 불균형 시 참여 독려
+
+## 데이터 모델
+
+```typescript
+interface Meeting {
+  id: string;
+  title: string;
+  status: 'preparing' | 'in_progress' | 'completed';
+  agenda: string;
+  participants: Participant[];
+  principles: Principle[];
+  transcript: TranscriptEntry[];
+  interventions: Intervention[];
+  actionItems: ActionItem[];
+}
+```
+
+## 실시간 파이프라인
+
+```
+Audio -> Realtime STT -> Meeting State Store
+                    |
+                    v
+             Triage Agent
+            /      |      \
+       Topic  Principle  Participation
+       Agent     Agent       Agent
+            \      |      /
+           Intervention Merge
+                   |
+             Alert + Toast
+```
+
+### 처리 주기
+
+- **STT**: 실시간 (streaming)
+- **개입 판단**: 발화 종료 감지 시
+- **개입 실행**: 즉시 (경고음 + Toast)
+- **화자 분리**: 회의 종료 후 배치 처리
+
+## 관련 문서
+
+- [요구사항](docs/00-REQUIREMENTS.md)
+- [PRD](docs/01-PRD.md)
+- [아키텍처](docs/02-ARCHITECTURE.md)
+- [유저 플로우](docs/03-USER-FLOW.md)
+- [API 스펙](docs/04-API-SPEC.md)
+- [데모 시나리오](docs/05-DEMO-SCENARIO.md)
+- [구현 가이드](docs/06-IMPLEMENTATION-GUIDE.md)
+- [Multi-Agent 설계](docs/07-MULTI-AGENT-DESIGN.md)
 
 ## English README
 
-- `README.en.md`
+- [README.en.md](README.en.md)
