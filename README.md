@@ -10,6 +10,20 @@ OpenAI Coxwave Hackathon 요구사항에 맞춰, 회의 도중의 **주제 이�
 - 데모 URL: (추가 예정)
 - 데모 영상: (추가 예정)
 
+### 데모 실행
+1. `backend/.env` 파일 생성 및 API key 기입
+```
+OPENAI_API_KEY=<YOUR_API_KEY>
+```
+2. docker compose up 실행
+```bash
+docker compose --env-file backend/.env -f docker/docker-compose.yml up -d --build
+```
+3. 데모 이후 자원 정리
+```bash
+docker compose --env-file backend/.env -f docker/docker-compose.yml down
+```
+
 ### 데모 플로우 (로컬)
 1. `http://localhost:3000` 접속
 
