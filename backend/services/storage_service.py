@@ -168,6 +168,24 @@ class StorageService:
             except OSError:
                 return None
 
+        def read_feedback() -> dict[str, str] | None:
+            feedback_dir = meeting_dir / "feedback"
+            if not feedback_dir.exists() or not feedback_dir.is_dir():
+                return None
+            feedback_map: dict[str, str] = {}
+            for entry in feedback_dir.iterdir():
+                if not entry.is_file() or entry.suffix.lower() != ".md":
+                    continue
+                content = read_optional(entry)
+                if content is None:
+                    continue
+                name = entry.stem
+                first_line = content.splitlines()[0] if content else ""
+                if first_line.startswith("# 개인 피드백:"):
+                    name = first_line.split(":", 1)[1].strip() or name
+                feedback_map[name] = content
+            return feedback_map or None
+
         return {
             "id": meeting_id,
             "preparation": read_optional(meeting_dir / "preparation.md"),
@@ -175,6 +193,7 @@ class StorageService:
             "interventions": read_optional(meeting_dir / "interventions.md"),
             "summary": read_optional(meeting_dir / "summary.md"),
             "actionItems": read_optional(meeting_dir / "action-items.md"),
+            "feedback": read_feedback(),
         }
 
     async def save_preparation(self, state: MeetingState):

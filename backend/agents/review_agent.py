@@ -395,6 +395,8 @@ class ParticipantFeedbackAgent:
         participant: Participant,
         transcript: list[TranscriptEntry],
     ) -> str:
+        context_text = self._format_feedback_context(state)
+        recent_transcript = self._format_recent_transcript(transcript, max_entries=12)
         participant_lines = [
             f"{t.speaker}: {t.text}" for t in transcript if t.speaker == participant.name
         ][-8:]
@@ -405,6 +407,12 @@ class ParticipantFeedbackAgent:
 
 참석자: {participant.name} ({participant.role})
 발언 비중: {share}%
+회의 컨텍스트:
+{context_text}
+
+최근 회의 발화(요약):
+{recent_transcript}
+
 최근 발화:
 {chr(10).join(participant_lines) if participant_lines else '발화 기록 없음'}
 
@@ -451,6 +459,39 @@ JSON으로 응답하세요:
         if not parsed.positives and not parsed.improvements:
             return ValidationResult(ok=False, error="empty feedback")
         return ValidationResult(ok=True, value=parsed)
+
+    def _format_feedback_context(self, state: MeetingState) -> str:
+        agenda = state.agenda.strip() if state.agenda else "없음"
+        principles = ", ".join(
+            [p.get("name") or p.get("id") for p in state.principles if p.get("name") or p.get("id")]
+        ) or "없음"
+        participants = ", ".join(
+            [f"{p.name}({p.role})" if p.role else p.name for p in state.participants]
+        ) or "없음"
+        interventions = [
+            f"- {inv.intervention_type.value}: {inv.message}"
+            for inv in state.interventions[-5:]
+        ] or ["- 없음"]
+        lines = [
+            f"- 회의 제목: {state.title}",
+            f"- 아젠다: {agenda}",
+            f"- 참석자: {participants}",
+            f"- 회의 원칙: {principles}",
+            "- 최근 개입:",
+            *interventions,
+        ]
+        return "\n".join(lines)
+
+    def _format_recent_transcript(
+        self,
+        transcript: list[TranscriptEntry],
+        max_entries: int,
+    ) -> str:
+        if not transcript:
+            return "내용 없음"
+        recent = transcript[-max_entries:]
+        lines = [f"{t.speaker}: {t.text}" for t in recent]
+        return "\n".join(lines)
 
 
 class ActionItemAgent:
