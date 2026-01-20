@@ -50,6 +50,7 @@ interface MeetingState {
   // Actions
   setTitle: (title: string) => void;
   setAgenda: (agenda: string) => void;
+  setParticipants: (participants: Participant[]) => void;
   addParticipant: (participant: Participant) => void;
   removeParticipant: (id: string) => void;
   setSelectedPrinciples: (principles: string[]) => void;
@@ -76,6 +77,7 @@ export const useMeetingStore = create<MeetingState>((set) => ({
 
   setTitle: (title) => set({ title }),
   setAgenda: (agenda) => set({ agenda }),
+  setParticipants: (participants) => set({ participants }),
   addParticipant: (participant) =>
     set((state) => ({ participants: [...state.participants, participant] })),
   removeParticipant: (id) =>

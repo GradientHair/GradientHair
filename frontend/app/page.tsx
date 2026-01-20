@@ -6,6 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useMeetingStore } from "@/store/meeting-store";
 
 export default function MeetingPrepPage() {
@@ -16,6 +25,7 @@ export default function MeetingPrepPage() {
     agenda,
     setAgenda,
     participants,
+    setParticipants,
     addParticipant,
     removeParticipant,
     selectedPrinciples,
@@ -24,6 +34,8 @@ export default function MeetingPrepPage() {
 
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [pastedText, setPastedText] = useState("");
 
   const principles = [
     { id: "agile", name: "Agile 원칙" },
@@ -75,8 +87,176 @@ export default function MeetingPrepPage() {
     }
   };
 
+  const parseCalendarPaste = (text: string) => {
+    const lines = text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      return null;
+    }
+
+    const titleLine = lines[0];
+    const agendaLines: string[] = [];
+    const parsedParticipants: { id: string; name: string; role: string }[] = [];
+    const participantKeys = new Set<string>();
+    const roleKeywords = new Set([
+      "주최자",
+      "참석자",
+      "필수 참석자",
+      "선택 참석자",
+      "Organizer",
+      "Host",
+    ]);
+    const statusKeywords = new Set(["한가함", "바쁨", "미정"]);
+    const ignoreAgendaKeywords = [
+      "참석자",
+      "초대",
+      "회신",
+      "수락",
+    ];
+
+    const isDateLine = (line: string) =>
+      /(\bAM\b|\bPM\b|\d{1,2}:\d{2}|월|일|\bJan\b|\bFeb\b|\bMar\b|\bApr\b|\bMay\b|\bJun\b|\bJul\b|\bAug\b|\bSep\b|\bOct\b|\bNov\b|\bDec\b)/i.test(
+        line
+      );
+
+    const isLikelyName = (line: string) => {
+      if (line.includes("안녕하세요")) return false;
+      if (line.includes("@")) return false;
+      if (/[0-9]/.test(line)) return false;
+      if (line.includes("명")) return false;
+      if (line.includes("초대") || line.includes("회신") || line.includes("수락")) return false;
+      if (line.length > 40) return false;
+      return /[A-Za-z가-힣]/.test(line);
+    };
+
+    let agendaStarted = false;
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      const nextLine = lines[i + 1];
+
+      if (isDateLine(line)) {
+        continue;
+      }
+
+      if (roleKeywords.has(line)) {
+        const last = parsedParticipants[parsedParticipants.length - 1];
+        if (last) {
+          last.role = "";
+        }
+        continue;
+      }
+
+      if (statusKeywords.has(line)) {
+        continue;
+      }
+
+      if (line.includes("@")) {
+        if (!agendaStarted) {
+          const key = line.toLowerCase();
+          if (!participantKeys.has(key)) {
+            participantKeys.add(key);
+            parsedParticipants.push({
+              id: crypto.randomUUID(),
+              name: line,
+              role: "",
+            });
+          }
+        }
+        continue;
+      }
+
+      if (isLikelyName(line)) {
+        let role = "";
+        if (nextLine && roleKeywords.has(nextLine)) {
+          role = "";
+          i += 1;
+        }
+        const cleanedName = line.replace(/\([^)]*\)/g, "").trim();
+        if (!agendaStarted && cleanedName.length > 0) {
+          const key = cleanedName.toLowerCase();
+          if (!participantKeys.has(key)) {
+            participantKeys.add(key);
+            parsedParticipants.push({
+              id: crypto.randomUUID(),
+              name: cleanedName,
+              role,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (ignoreAgendaKeywords.some((keyword) => line.includes(keyword))) {
+        continue;
+      }
+
+      agendaLines.push(line);
+      agendaStarted = true;
+    }
+
+    return {
+      title: titleLine,
+      agenda: agendaLines.join("\n"),
+      participants: parsedParticipants,
+    };
+  };
+
+  const handlePasteSubmit = () => {
+    const parsed = parseCalendarPaste(pastedText);
+    if (!parsed) {
+      return;
+    }
+
+    if (parsed.title) {
+      setTitle(parsed.title);
+    }
+
+    if (parsed.agenda) {
+      setAgenda(parsed.agenda);
+    }
+
+    if (parsed.participants.length > 0) {
+      setParticipants(parsed.participants);
+    }
+
+    setPastedText("");
+    setPasteModalOpen(false);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex justify-end">
+        <Dialog open={pasteModalOpen} onOpenChange={setPasteModalOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline">회의 붙여넣기</Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>회의 붙여넣기</DialogTitle>
+              <DialogDescription>
+                Google Calendar에서 복사한 내용을 그대로 붙여넣으면 자동으로 입력해요.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              placeholder="예: 챗봇 화면 기획 논의&#10;1월 20일 (화요일)⋅AM 10:00~ 10:30&#10;참석자 2명"
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              rows={10}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPasteModalOpen(false)}>
+                취소
+              </Button>
+              <Button onClick={handlePasteSubmit} disabled={!pastedText.trim()}>
+                입력하기
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>회의 제목</CardTitle>
@@ -112,7 +292,7 @@ export default function MeetingPrepPage() {
             <div className="space-y-2">
               {participants.map((p) => (
                 <div key={p.id} className="flex items-center justify-between bg-gray-100 p-2 rounded">
-                  <span>{p.name} ({p.role})</span>
+                  <span>{p.role ? `${p.name} (${p.role})` : p.name}</span>
                   <Button variant="ghost" size="sm" onClick={() => removeParticipant(p.id)}>
                     X
                   </Button>
