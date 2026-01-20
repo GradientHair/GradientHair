@@ -43,6 +43,11 @@ def main() -> None:
     parser.add_argument("--off-topic", type=float, default=0.12, help="주제 이탈 확률")
     parser.add_argument("--agile-violation", type=float, default=0.1, help="애자일 위반 확률")
     parser.add_argument("--seed", type=int, default=None, help="랜덤 시드")
+    parser.add_argument(
+        "--llm-only",
+        action="store_true",
+        help="LLM 실모드만 사용 (OPENAI_API_KEY 필요)",
+    )
     args = parser.parse_args()
 
     state = build_sample_state(args.agenda)
@@ -56,6 +61,7 @@ def main() -> None:
         recent_transcript=state.transcript,
         turns=args.turns,
         seed=args.seed,
+        require_llm=args.llm_only,
     )
 
     for turn in turns:

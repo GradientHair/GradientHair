@@ -100,9 +100,13 @@ class PersonaDialogueAgent:
         recent_transcript: list[TranscriptEntry],
         turns: int = 3,
         seed: Optional[int] = None,
+        require_llm: bool = False,
     ) -> list[PersonaDialogueTurn]:
         if not state.participants or turns < 1:
             return []
+
+        if require_llm and self.runner is None:
+            raise RuntimeError("LLM runner unavailable. Set OPENAI_API_KEY to enable real mode.")
 
         rng = random.Random(seed)
         assignments = self.assign_personas(state, rng=rng)
@@ -115,6 +119,8 @@ class PersonaDialogueAgent:
             parsed = self.runner.run(prompt)
             if parsed and parsed.utterances:
                 return parsed.utterances
+            if require_llm:
+                raise RuntimeError("LLM generation failed. Check model access or prompt constraints.")
 
         return self._fallback_dialogue(
             state,
@@ -185,6 +191,8 @@ class PersonaDialogueAgent:
 - off_topic=true인 경우, 아젠다와 무관한 가벼운 잡담을 포함한다.
 - agile_violation=true인 경우, 해당 발언자가 본인 주장을 밀고 나가는 표현을 넣는다.
 - 나머지 발언은 아젠다 기반으로 업무 수행 방법을 논의한다.
+- 각 발언은 직전 발언을 이어 받아 한 단계씩 구체화한다.
+- 같은 문장을 반복하지 않는다.
 - 한국어로 자연스럽고 현실적인 톤으로 작성한다.
 
 JSON 응답:
