@@ -112,6 +112,21 @@ class SpeechSTTService:
             if self._on_error:
                 await self._on_error(e)
 
+    def transcribe_pcm_bytes(self, pcm: bytes) -> list[DiarizedSegment]:
+        if not pcm or not self.client:
+            return []
+        wav_bytes = self._pcm_to_wav_bytes(pcm)
+        audio_file = io.BytesIO(wav_bytes)
+        audio_file.name = "audio.wav"
+        transcription = self.client.audio.transcriptions.create(
+            model=self.model,
+            file=audio_file,
+            response_format=self.response_format,
+            language=self.language,
+            chunking_strategy=self.chunking_strategy,
+        )
+        return self._parse_diarized_response(transcription)
+
     def _pcm_to_wav_bytes(self, pcm: bytes) -> bytes:
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:

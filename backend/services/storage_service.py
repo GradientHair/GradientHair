@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
 import asyncio
+import base64
 
 from models.meeting import MeetingState, TranscriptEntry
 
@@ -41,6 +42,24 @@ class StorageService:
         meeting_dir.mkdir(exist_ok=True)
         (meeting_dir / "transcript_live.txt").touch(exist_ok=True)
         return meeting_dir
+
+    def get_audio_pcm_path(self, meeting_id: str) -> Path:
+        meeting_dir = self.get_meeting_dir(meeting_id)
+        return meeting_dir / "audio.pcm"
+
+    async def append_audio_chunk(self, meeting_id: str, audio_base64: str) -> None:
+        try:
+            data = base64.b64decode(audio_base64)
+        except Exception:
+            return
+
+        path = self.get_audio_pcm_path(meeting_id)
+
+        def _append():
+            with path.open("ab") as f:
+                f.write(data)
+
+        await asyncio.to_thread(_append)
 
     async def _flush_transcript_buffer(self, meeting_id: str) -> None:
         buffer = self._transcript_buffers.get(meeting_id)

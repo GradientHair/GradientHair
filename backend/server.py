@@ -21,6 +21,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from models.meeting import MeetingState, MeetingStatus, Participant, TranscriptEntry
+from services.realtime_stt_service import (
+    RealtimeSTTService,
+    STTConnectionError,
+    STTConfigurationError,
+    ConnectionState,
+)
 from services.speaker_service import SpeakerService
 from services.storage_service import StorageService
 from services.speech_stt_service import SpeechSTTService, DiarizedSegment
@@ -396,6 +402,34 @@ async def _run_review_jobs(state: MeetingState) -> None:
         logger.error(f"Review generation failed: {e}", exc_info=True)
 
 
+async def _run_diarize_job(state: MeetingState) -> None:
+    storage = StorageService()
+    pcm_path = storage.get_audio_pcm_path(state.meeting_id)
+    if not pcm_path.exists() or pcm_path.stat().st_size == 0:
+        return
+    service = SpeechSTTService()
+    if not service.enabled:
+        return
+    try:
+        pcm_bytes = await asyncio.to_thread(pcm_path.read_bytes)
+        segments = await asyncio.to_thread(service.transcribe_pcm_bytes, pcm_bytes)
+        if not segments:
+            return
+        meeting_dir = storage.get_meeting_dir(state.meeting_id)
+        diarized_md = meeting_dir / "transcript_diarized.md"
+        diarized_json = meeting_dir / "transcript_diarized.json"
+        lines = [f"# Diarized Transcript\n\n회의: {state.title}\n\n---\n"]
+        for seg in segments:
+            lines.append(f"- **{seg.speaker}**: {seg.text}\n")
+        diarized_md.write_text("".join(lines), encoding="utf-8")
+        diarized_json.write_text(
+            json.dumps([seg.__dict__ for seg in segments], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.error(f"Diarize transcription failed: {e}", exc_info=True)
+
+
 @app.post("/api/v1/meetings/{meeting_id}/end")
 async def end_meeting(meeting_id: str):
     state = meetings.get(meeting_id)
@@ -409,6 +443,7 @@ async def end_meeting(meeting_id: str):
     await storage.save_transcript(state)
     await storage.save_interventions(state)
     asyncio.create_task(_run_review_jobs(state))
+    asyncio.create_task(_run_diarize_job(state))
 
     return {"id": meeting_id, "status": "completed", "reviewStatus": "queued"}
 
@@ -463,6 +498,7 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
     await storage.save_transcript(state)
     await storage.save_interventions(state)
     asyncio.create_task(_run_review_jobs(state))
+    asyncio.create_task(_run_diarize_job(state))
 
     return {"id": meeting_id, "status": "saved", "reviewStatus": "queued", "files": [
         f"meetings/{meeting_id}/preparation.md",
@@ -684,7 +720,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     state.status = MeetingStatus.IN_PROGRESS
     state.started_at = datetime.utcnow()
 
-    speech_service = SpeechSTTService()
+    stt_service = RealtimeSTTService()
     speaker_service = SpeakerService()
     speaker_service.set_participants(state.participants)
     safety_orchestrator = SafetyOrchestrator()
@@ -820,11 +856,11 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             except Exception as e:
                 logger.warning(f"[{meeting_id}] Failed to send intervention: {e}")
 
-    async def on_segments(segments: list[DiarizedSegment]):
-        for seg in segments:
-            await add_transcript(seg.text, speaker_override=seg.speaker)
-        if segments:
-            await run_agents()
+    async def on_transcript(text: str, latency_ms: float | None = None):
+        await add_transcript(text, latency_ms=latency_ms)
+
+    async def on_speech_end():
+        await run_agents()
 
     async def on_stt_error(error: Exception):
         error_text = str(error) or error.__class__.__name__
@@ -841,14 +877,36 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             },
         )
 
-    speech_service.set_handlers(on_segments, on_error=on_stt_error)
+    def on_connection_state_change(old_state: ConnectionState, new_state: ConnectionState):
+        logger.info(f"STT connection state: {old_state.value} -> {new_state.value}")
+        if new_state == ConnectionState.RECONNECTING:
+            asyncio.create_task(manager.send_message(
+                meeting_id,
+                {"type": "stt_status", "data": {"status": "reconnecting"}},
+            ))
+        elif new_state == ConnectionState.CONNECTED:
+            asyncio.create_task(manager.send_message(
+                meeting_id,
+                {"type": "stt_status", "data": {"status": "connected"}},
+            ))
+        elif new_state == ConnectionState.FAILED:
+            asyncio.create_task(manager.send_message(
+                meeting_id,
+                {"type": "stt_status", "data": {"status": "failed"}},
+            ))
 
-    if speech_service.enabled:
-        await manager.send_message(
-            meeting_id,
-            {"type": "stt_status", "data": {"status": "connected"}},
+    stt_connected = False
+    try:
+        await stt_service.connect(
+            on_transcript,
+            on_speech_end,
+            on_error=on_stt_error,
+            on_connection_state_change=on_connection_state_change,
         )
-    else:
+        stt_connected = True
+        logger.info(f"Realtime STT connected for meeting {meeting_id}")
+    except STTConfigurationError as e:
+        logger.error(f"STT configuration error: {e}")
         await manager.send_message(
             meeting_id,
             {
@@ -860,6 +918,21 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 },
             },
         )
+    except STTConnectionError as e:
+        logger.error(f"STT connection error: {e}")
+        await manager.send_message(
+            meeting_id,
+            {
+                "type": "error",
+                "data": {
+                    "code": "STT_CONNECTION_ERROR",
+                    "message": "Failed to connect to speech-to-text service",
+                    "recoverable": True,
+                },
+            },
+        )
+    except Exception as e:
+        logger.error(f"Unexpected STT error: {e}", exc_info=True)
 
     audio_chunk_count = 0
     logger.info(f"[{meeting_id}] Entering receive loop, waiting for audio...")
@@ -891,20 +964,25 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 audio_size = len(data.get("data", ""))
                 logger.info(f"[{meeting_id}] Audio chunk #{audio_chunk_count} received, size: {audio_size} bytes")
 
-                if speech_service.enabled:
-                    await speech_service.ingest_audio(data["data"])
+                await storage.append_audio_chunk(meeting_id, data.get("data", ""))
+                if stt_connected and stt_service.is_connected:
+                    success = await stt_service.send_audio(data["data"])
+                    if success:
+                        logger.debug(f"[{meeting_id}] Audio chunk #{audio_chunk_count} sent to OpenAI")
+                    else:
+                        logger.warning(f"[{meeting_id}] Failed to send audio chunk #{audio_chunk_count}")
                 else:
-                    logger.warning(f"[{meeting_id}] STT not configured, audio chunk dropped")
+                    logger.warning(f"[{meeting_id}] STT not connected, audio chunk dropped")
     except WebSocketDisconnect as e:
         logger.info(f"WebSocket disconnected for meeting {meeting_id} (code={getattr(e, 'code', 'unknown')})")
         manager.disconnect(meeting_id)
-        await speech_service.close()
+        await stt_service.disconnect()
         await storage.save_transcript(state)
         await storage.save_interventions(state)
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
         manager.disconnect(meeting_id)
-        await speech_service.close()
+        await stt_service.disconnect()
         await storage.save_transcript(state)
         await storage.save_interventions(state)
 
