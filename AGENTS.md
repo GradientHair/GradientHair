@@ -52,6 +52,7 @@ Codex가 작업 시 참고해야 할 스킬/패턴 요약입니다.
 ## Required Workflow (Always)
 
 - 모든 개발은 별도 브랜치에서 수행하고 PR로 병합한다.
+- main 브랜치에서 직접 작업하지 않는다. (항상 PR 경유)
 
 1. 개발 완료 후, 동작 테스트를 먼저 수행한다.  
    - `scripts/run_smoke.sh` 실행 → `.last_test_run` 갱신
