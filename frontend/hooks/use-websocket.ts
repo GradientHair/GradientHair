@@ -148,11 +148,8 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
                 store.transcriptStream.timestamp === normalized.timestamp &&
                 store.transcriptStream.speaker === normalized.speaker
               ) {
-                store.updateTranscriptStream({
-                  timestamp: normalized.timestamp,
-                  speaker: normalized.speaker,
-                  text: "",
-                });
+                // Set transcriptStream to null to completely clear it
+                useMeetingStore.setState({ transcriptStream: null });
               }
               break;
             }
