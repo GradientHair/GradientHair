@@ -67,6 +67,22 @@ Codex가 작업 시 참고해야 할 스킬/패턴 요약입니다.
 - `pre-commit`: 최근 테스트 스탬프 확인
 - `post-commit`: review-agent-safety 기준 검사
 
+## Local Dev (Codex 참고용)
+
+```bash
+# 환경 설정
+# (backend) OPENAI_API_KEY 설정 후 실행
+make env-backend
+make env-frontend
+
+# 의존성 설치
+make setup-backend
+make setup-frontend
+
+# 실행
+make run-local-dev
+```
+
 ## Playwright UI Demo Flow (Shareable)
 
 다른 사람이 동일하게 재현 가능한 UI 데모 플로우입니다.
