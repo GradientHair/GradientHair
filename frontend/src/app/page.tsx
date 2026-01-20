@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { registry } from "@/lib/agents/registry";
 import { createTranscriptStreamer, type TranscriptSegment } from "@/lib/meeting/streaming";
 
@@ -33,6 +34,17 @@ export default function Home() {
   const [isStreamingDemo, setIsStreamingDemo] = useState(false);
   const streamerRef = useRef(createTranscriptStreamer());
   const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [textInput, setTextInput] = useState("");
+  const [textSpeaker, setTextSpeaker] = useState("Host");
+  const [textRole, setTextRole] = useState<TranscriptSegment["role"]>("host");
+  const [meetingId, setMeetingId] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState("");
+  const [inMeeting, setInMeeting] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [isSpeechActive, setIsSpeechActive] = useState(false);
+  const [speechSupport, setSpeechSupport] = useState(true);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const router = useRouter();
 
   const statusLabel = useMemo(() => {
     if (!stream) return statusCopy.idle;
@@ -180,12 +192,156 @@ export default function Home() {
     setBotEnabled((prev) => !prev);
   }, []);
 
+  const submitTextInput = useCallback(() => {
+    if (!textInput.trim()) return;
+    const segment: TranscriptSegment = {
+      id: `${Date.now()}-manual`,
+      speaker: textSpeaker || "Guest",
+      role: textRole,
+      text: textInput.trim(),
+      timestamp: new Date(),
+      isFinal: true,
+    };
+    streamerRef.current.push(segment);
+    setTextInput("");
+  }, [textInput, textRole, textSpeaker]);
+
+  const syncUrlRoom = useCallback((room: string | null) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (room) {
+      url.searchParams.set("room", room);
+    } else {
+      url.searchParams.delete("room");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const createRoomId = useCallback(() => {
+    const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+    let value = "";
+    for (let i = 0; i < 6; i += 1) {
+      value += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return value;
+  }, []);
+
+  const startLocalSession = useCallback(() => {
+    const id = createRoomId();
+    setMeetingId(id);
+    setInMeeting(true);
+    setJoinCode(id);
+    syncUrlRoom(id);
+    router.push(`/meeting/${id}`);
+  }, [createRoomId, router, syncUrlRoom]);
+
+  const joinSession = useCallback(() => {
+    if (!joinCode.trim()) return;
+    const id = joinCode.trim();
+    setMeetingId(id);
+    setInMeeting(true);
+    syncUrlRoom(id);
+    router.push(`/meeting/${id}`);
+  }, [joinCode, router, syncUrlRoom]);
+
+  const leaveSession = useCallback(() => {
+    setInMeeting(false);
+    setMeetingId(null);
+    syncUrlRoom(null);
+  }, [syncUrlRoom]);
+
+  const copyRoomLink = useCallback(async () => {
+    if (!meetingId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("room", meetingId);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 1500);
+    } catch (err) {
+      setCopiedLink(false);
+    }
+  }, [meetingId]);
+
+  const stopSpeech = useCallback(() => {
+    recognitionRef.current?.stop();
+    setIsSpeechActive(false);
+  }, []);
+
+  const startSpeech = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognitionCtor =
+      (window as typeof window & { SpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition ??
+      (window as typeof window & { webkitSpeechRecognition?: typeof SpeechRecognition })
+        .webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setSpeechSupport(false);
+      return;
+    }
+    setSpeechSupport(true);
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const text = result[0]?.transcript?.trim();
+        if (!text) continue;
+        const segment: TranscriptSegment = {
+          id: `speech-${Date.now()}-${i}`,
+          speaker: displayName || "Host",
+          role: "host",
+          text,
+          timestamp: new Date(),
+          isFinal: result.isFinal,
+        };
+        streamerRef.current.push(segment);
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsSpeechActive(false);
+    };
+
+    recognition.onend = () => {
+      setIsSpeechActive(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsSpeechActive(true);
+  }, [displayName]);
+
+  const toggleSpeech = useCallback(() => {
+    if (isSpeechActive) {
+      stopSpeech();
+    } else {
+      startSpeech();
+    }
+  }, [isSpeechActive, startSpeech, stopSpeech]);
+
   useEffect(() => {
     updateDeviceLists();
     const handler = () => updateDeviceLists();
     navigator.mediaDevices?.addEventListener?.("devicechange", handler);
     return () => navigator.mediaDevices?.removeEventListener?.("devicechange", handler);
   }, [updateDeviceLists]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const room = url.searchParams.get("room");
+    if (room) {
+      setJoinCode(room);
+      setMeetingId(room);
+      setInMeeting(true);
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = streamerRef.current.onSegment(appendSegment);
@@ -244,8 +400,9 @@ export default function Home() {
     () => () => {
       stopStream();
       stopDemoStream();
+      stopSpeech();
     },
-    [stopStream, stopDemoStream],
+    [stopStream, stopDemoStream, stopSpeech],
   );
 
   const canJoin = Boolean(stream && isMicOn && isCameraOn);
@@ -435,6 +592,74 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-4 rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted">
+                        Live speech (demo)
+                      </p>
+                      <p className="mt-1 text-sm text-muted">
+                        Use browser speech recognition to stream your mic as text.
+                      </p>
+                      {!speechSupport && (
+                        <p className="mt-2 text-xs text-red-600">
+                          This browser does not support SpeechRecognition. Try Chrome.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                        isSpeechActive ? "bg-accent-2 text-white" : "border border-ink/10 bg-white text-ink"
+                      }`}
+                      type="button"
+                      onClick={toggleSpeech}
+                    >
+                      {isSpeechActive ? "Stop live text" : "Start live text"}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted">
+                    Text input mode
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
+                    <input
+                      className="w-full rounded-2xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      value={textSpeaker}
+                      onChange={(event) => setTextSpeaker(event.target.value)}
+                      placeholder="Speaker name"
+                    />
+                    <select
+                      className="w-full rounded-2xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      value={textRole}
+                      onChange={(event) => setTextRole(event.target.value as TranscriptSegment["role"])}
+                    >
+                      <option value="host">Host</option>
+                      <option value="guest">Guest</option>
+                      <option value="bot">Bot</option>
+                    </select>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      className="flex-1 rounded-2xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      value={textInput}
+                      onChange={(event) => setTextInput(event.target.value)}
+                      placeholder="Type a message to add to the transcript..."
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          submitTextInput();
+                        }
+                      }}
+                    />
+                    <button
+                      className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white"
+                      type="button"
+                      onClick={submitTextInput}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-3xl border border-ink/10 bg-white/70 p-4">
@@ -562,20 +787,64 @@ export default function Home() {
             </div>
 
             <div className="rounded-[28px] bg-ink p-6 text-white shadow-[var(--shadow)]">
-              <h3 className="text-lg font-semibold">Ready to join?</h3>
+              <h3 className="text-lg font-semibold">Join a room</h3>
               <p className="mt-2 text-sm text-white/70">
-                Start a localhost room and invite a second browser tab for testing.
+                Start a localhost room or join an existing room code.
               </p>
-              <button
-                className={`mt-4 w-full rounded-full px-4 py-3 text-sm font-semibold transition ${
-                  canJoin ? "bg-accent text-white" : "bg-white/20 text-white/70"
-                }`}
-                type="button"
-                disabled={!canJoin}
-                onClick={() => window.alert("Local room starting soon.")}
-              >
-                {canJoin ? "Start local session" : "Enable camera + mic first"}
-              </button>
+              {inMeeting ? (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl bg-white/10 px-4 py-3 text-sm">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/60">Room</p>
+                    <p className="mt-1 text-lg font-semibold">{meetingId}</p>
+                  </div>
+                  <button
+                    className="w-full rounded-full border border-white/30 px-4 py-2.5 text-sm font-semibold text-white"
+                    type="button"
+                    onClick={copyRoomLink}
+                  >
+                    {copiedLink ? "Link copied" : "Copy invite link"}
+                  </button>
+                  <button
+                    className="w-full rounded-full bg-white/20 px-4 py-2.5 text-sm font-semibold text-white"
+                    type="button"
+                    onClick={leaveSession}
+                  >
+                    Leave room
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <button
+                    className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${
+                      canJoin ? "bg-accent text-white" : "bg-white/20 text-white/70"
+                    }`}
+                    type="button"
+                    disabled={!canJoin}
+                    onClick={startLocalSession}
+                  >
+                    {canJoin ? "Start local session" : "Enable camera + mic first"}
+                  </button>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <label className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                      Join code
+                    </label>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      value={joinCode}
+                      onChange={(event) => setJoinCode(event.target.value)}
+                      placeholder="e.g. ab3k9p"
+                    />
+                    <button
+                      className="mt-3 w-full rounded-full bg-white/20 px-4 py-2.5 text-sm font-semibold text-white"
+                      type="button"
+                      onClick={joinSession}
+                      disabled={!joinCode.trim()}
+                    >
+                      Join room
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </aside>
         </div>
