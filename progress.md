@@ -8,3 +8,4 @@
 - Updated `README.md` to list new skills.
 - Verified `planning-with-files` and `openai-agents-python` match local Codex copies (excluding nested .git).
 - Push rejected due to remote updates; attempted pull --rebase but blocked by unstaged planning file update.
+- Resolved push rejection by rebasing onto latest origin/master and pushing successfully.
