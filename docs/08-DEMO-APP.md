@@ -40,16 +40,17 @@ Edit `backend/app/demo/demo_script.json` to add new scripts or tweak events:
 
 ## How to run (Docker)
 
-1) Set your API key (optional but recommended for AI recap):
+1) Create a Compose env file (keeps `.env` free for uv):
 
 ```bash
-export OPENAI_API_KEY=sk-...
+cp .env.compose.example .env.compose
+# edit .env.compose and set OPENAI_API_KEY
 ```
 
 2) Start services:
 
 ```bash
-docker compose up --build
+docker compose --env-file .env.compose up --build
 ```
 
 3) Open the UI:
@@ -65,16 +66,18 @@ http://localhost:3000
 ### Backend
 ```bash
 cd backend
-python -m venv .venv
+uv venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uv pip install -r requirements.txt
+cp .env.local.example .env.local
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend
 ```bash
 cd frontend
 npm install
+cp .env.local.example .env.local
 npm run dev
 ```
 
@@ -115,3 +118,13 @@ Replace the demo transcript timeline with:
 - Real-time events emitted to the frontend
 
 All UI and storage layers already match the expected contract, so you can swap the data source without breaking the demo flow.
+
+---
+
+## Env file policy (uv-safe)
+
+To avoid conflicts with uv virtual environments, we **do not use a root `.env` file**.
+
+- Docker Compose: `.env.compose`
+- Backend local dev: `backend/.env.local`
+- Frontend local dev: `frontend/.env.local`

@@ -7,5 +7,8 @@ dist/
 __pycache__/
 *.pyc
 .venv/
-.env
+.env*
+!.env.compose.example
+!backend/.env.local.example
+!frontend/.env.local.example
 meetings/

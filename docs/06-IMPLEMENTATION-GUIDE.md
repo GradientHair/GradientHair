@@ -966,7 +966,7 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
-### Backend (.env)
+### Backend (.env.local)
 ```env
 OPENAI_API_KEY=sk-xxx
 CORS_ORIGINS=http://localhost:3000
@@ -1018,12 +1018,12 @@ npm run dev
 ### Backend
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+uv venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+uv pip install -r requirements.txt
 python main.py
 # 또는 FastAPI 사용 시:
-# uvicorn server:app --reload --port 8000
+# uv run uvicorn server:app --reload --port 8000
 # http://localhost:8000
 ```
 
