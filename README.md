@@ -56,22 +56,35 @@ docker compose --env-file backend/.env -f docker/docker-compose.yml down
 
 ## 솔루션
 
-Realtime STT → 발화/상태 업데이트 → 멀티에이전트 분석 → 개입(토스트/알림) 흐름으로
-회의 중 개입을 수행하고, 회의 종료 시 Review Agent가 요약/액션 아이템/피드백을 생성하여
-Markdown으로 저장한다.
+Realtime STT로 발화를 수집해 Meeting State를 갱신하고, 멀티에이전트가 실시간 개입을 수행한다.
+회의 종료 후에는 Review Agent가 요약/액션 아이템/피드백을 생성해 Markdown으로 저장한다.
+
+LLM 출력 정합성은 3단계로 보강한다(함수 호출/structured output 스타일 JSON).
+1) Pydantic 스키마 파싱 + structured output(JSON) 강제
+2) 실패 시 에러 메시지를 포함한 재시도 루프 (error feedback loop)
+3) 선택적 DSPy 검증 단계(DSPY_VALIDATE=1)로 추가 안전장치
+(관련 문서화: [PR #5](https://github.com/GradientHair/GradientHair/pull/5))
+
+실용주의 관점에서 비용/지연을 줄이기 위해 모델 라우터를 두고,
+실시간 STT는 Realtime API로 처리하되 화자 분리(diarization)는 회의 종료 후
+배치(post-process)로 분리하여 비용과 지연을 분산한다.
 
 ## 조건 충족 여부
 
 - [x] OpenAI API 사용
 - [x] 멀티에이전트 구현
 - [x] 실행 가능한 데모
+- [x] LLM structured output 검증 파이프라인(스키마 파싱 → 에러 피드백 재시도 → DSPy 옵션)
+- [x] 실용적 비용/지연 최적화(모델 라우팅, diarize 후처리 분리)
 
 ## 핵심 기능
 
 - 실시간 음성 인식 (OpenAI Realtime API)
-- 참석자 기반 화자 분리
+- 회의 종료 후 diarize 기반 화자 분리(배치 처리)
 - 주제 이탈/원칙 위반/참여 불균형 감지 및 개입
 - 회의 요약/액션 아이템/피드백 Markdown 저장
+- LLM structured output 검증 파이프라인(Pydantic + retry + DSPy 옵션)
+- Model Router 기반 비용/속도 최적화(작은 작업은 빠른 모델, 복잡한 작업은 고성능 모델)
 
 ## 아키텍처
 
@@ -79,17 +92,23 @@ Markdown으로 저장한다.
 Audio -> Realtime STT -> Meeting State Store
                     |
                     v
-                Triage Agent
-          (Intent 분류 / Handoff)
-        /        |        \
-   Topic Agent  Principle  Participation
-        \        |        /
-           Intervention Merge
+             Triage Agent
+       (Intent 분류 / Handoff)
+        /       |        \
+   Topic     Principle  Participation
+   Agent        Agent       Agent
+        \       |        /
+          Intervention Merge
                  |
             Alert + Toast
 
+LLM Calls:
+  Model Router -> Structured Output Runner
+                 (Pydantic parse + error feedback retry + optional DSPy)
+
 Post-meeting:
   Review Agent -> summary/action-items/feedback.md
+  Diarize Job  -> transcript_diarized.md/.json
 ```
 
 ## 저장 구조
