@@ -11,6 +11,7 @@ export function useAudioCapture(onAudioData: (base64: string) => void) {
   const streamRef = useRef<MediaStream | null>(null);
   const onAudioDataRef = useRef(onAudioData);
   const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
   const bufferRef = useRef<Int16Array[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -40,7 +41,7 @@ export function useAudioCapture(onAudioData: (base64: string) => void) {
   };
 
   const start = useCallback(async () => {
-    if (isRecording) {
+    if (isRecordingRef.current) {
       return;
     }
 
@@ -94,13 +95,14 @@ export function useAudioCapture(onAudioData: (base64: string) => void) {
         }
       }, 250);
 
+      isRecordingRef.current = true;
       setIsRecording(true);
       console.log("Audio capture started (PCM16 @ 24kHz)");
     } catch (error) {
       console.error("Failed to start audio capture:", error);
       throw error;
     }
-  }, [isRecording]);
+  }, []);
 
   const stop = useCallback(() => {
     if (intervalRef.current) {
@@ -124,6 +126,7 @@ export function useAudioCapture(onAudioData: (base64: string) => void) {
     }
 
     bufferRef.current = [];
+    isRecordingRef.current = false;
     setIsRecording(false);
     console.log("Audio capture stopped");
   }, []);
