@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
 import asyncio
+import base64
 
 from models.meeting import MeetingState, TranscriptEntry
 
@@ -39,7 +40,26 @@ class StorageService:
             except Exception:
                 meeting_dir = legacy_dir
         meeting_dir.mkdir(exist_ok=True)
+        (meeting_dir / "transcript_live.txt").touch(exist_ok=True)
         return meeting_dir
+
+    def get_audio_pcm_path(self, meeting_id: str) -> Path:
+        meeting_dir = self.get_meeting_dir(meeting_id)
+        return meeting_dir / "audio.pcm"
+
+    async def append_audio_chunk(self, meeting_id: str, audio_base64: str) -> None:
+        try:
+            data = base64.b64decode(audio_base64)
+        except Exception:
+            return
+
+        path = self.get_audio_pcm_path(meeting_id)
+
+        def _append():
+            with path.open("ab") as f:
+                f.write(data)
+
+        await asyncio.to_thread(_append)
 
     async def _flush_transcript_buffer(self, meeting_id: str) -> None:
         buffer = self._transcript_buffers.get(meeting_id)
@@ -175,6 +195,7 @@ class StorageService:
 
         with open(meeting_dir / "preparation.md", "w", encoding="utf-8") as f:
             f.write(content)
+        (meeting_dir / "transcript_live.txt").touch(exist_ok=True)
 
     async def save_transcript(self, state: MeetingState):
         await self._flush_transcript_buffer(state.meeting_id)
@@ -194,21 +215,7 @@ class StorageService:
         with open(meeting_dir / "transcript.md", "w", encoding="utf-8") as f:
             f.write(content)
 
-        # Plain text transcript for easy log-style consumption
-        txt_lines: list[str] = []
-        for entry in state.transcript:
-            time_str = entry.timestamp[:19].replace("T", " ")
-            try:
-                # Handle ISO timestamps with timezone or Z
-                iso_ts = entry.timestamp.replace("Z", "+00:00")
-                parsed = datetime.fromisoformat(iso_ts)
-                time_str = parsed.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                pass
-            txt_lines.append(f"[{time_str}] {entry.speaker}: {entry.text}")
-
-        with open(meeting_dir / "transcript.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(txt_lines) + ("\n" if txt_lines else ""))
+        # transcript_live.txt is the rolling plain-text log
 
     async def save_interventions(self, state: MeetingState):
         meeting_dir = self.get_meeting_dir(state.meeting_id)

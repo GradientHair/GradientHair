@@ -53,7 +53,7 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
     );
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     const now = Date.now();
     if (now - lastConnectAttemptRef.current < 500) {
       return;
@@ -81,8 +81,38 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
     const defaultProtocol =
       typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
     const defaultWsUrl = `${defaultProtocol}://${defaultHost}:8000`;
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
-    const fullUrl = `${wsUrl}/ws/meetings/${encodeURIComponent(meetingId)}`;
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
+    const fullUrl = `${wsBase}/ws/meetings/${encodeURIComponent(meetingId)}`;
+
+    const healthUrl = wsBase
+      .replace(/^wss:\/\//, "https://")
+      .replace(/^ws:\/\//, "http://")
+      .concat("/api/v1/health");
+
+    const healthOk = await (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1500);
+        const res = await fetch(healthUrl, { signal: controller.signal, cache: "no-store" });
+        clearTimeout(timer);
+        return res.ok;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!healthOk) {
+      isConnectingRef.current = false;
+      const attempt = Math.min(reconnectAttemptsRef.current + 1, 6);
+      reconnectAttemptsRef.current = attempt;
+      const delay = Math.min(500 * 2 ** (attempt - 1), 8000);
+      console.warn("WebSocket health check failed, retrying...", { attempt, delay });
+      reconnectTimerRef.current = setTimeout(() => {
+        connect();
+      }, delay);
+      return;
+    }
+
     console.log("Connecting to WebSocket:", fullUrl);
 
     try {
@@ -134,6 +164,13 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
               }
               break;
             }
+            case "transcript_update": {
+              const data = message.data || {};
+              if (data.id) {
+                store.updateTranscript(data);
+              }
+              break;
+            }
             case "intervention":
               store.addIntervention(message.data);
               break;
@@ -147,12 +184,15 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
               agentModeStatusHandler?.(message.data?.status);
               console.log("Agent mode status:", message.data?.status);
               break;
-            case "error":
-              console.error("Server error:", message.data);
-              if (typeof message.data?.code === "string" && message.data.code.startsWith("AGENT_MODE")) {
+            case "error": {
+              const payload = message.data || {};
+              const msg = payload.message || payload.code || "unknown";
+              console.error("Server error:", msg, payload);
+              if (typeof payload.code === "string" && payload.code.startsWith("AGENT_MODE")) {
                 agentModeStatusHandler?.("stopped");
               }
               break;
+            }
             default:
               console.log("Unknown message type:", message.type, message);
           }
@@ -179,7 +219,7 @@ export function useWebSocket(meetingId: string, options?: WebSocketOptions) {
 
       ws.onerror = () => {
         // Browser doesn't expose error details for security reasons
-        console.error("WebSocket connection error occurred, readyState:", ws.readyState);
+        console.warn("WebSocket connection error occurred, readyState:", ws.readyState);
         isConnectingRef.current = false;
         try {
           ws.close();

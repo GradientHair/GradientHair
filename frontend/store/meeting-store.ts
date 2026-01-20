@@ -65,6 +65,7 @@ interface MeetingState {
   startMeeting: (meetingId: string) => void;
   addTranscript: (entry: TranscriptEntry) => void;
   updateTranscriptStream: (chunk: { timestamp: string; speaker: string; text: string }) => void;
+  updateTranscript: (entry: Partial<TranscriptEntry> & { id: string }) => void;
   addIntervention: (intervention: Intervention) => void;
   dismissIntervention: () => void;
   updateSpeakerStats: (stats: SpeakerStats) => void;
@@ -120,6 +121,12 @@ export const useMeetingStore = create<MeetingState>((set) => ({
         },
       };
     }),
+  updateTranscript: (entry) =>
+    set((state) => ({
+      transcript: state.transcript.map((t) =>
+        t.id === entry.id ? { ...t, ...entry } : t
+      ),
+    })),
   addIntervention: (intervention) =>
     set((state) => ({
       interventions: [...state.interventions, intervention],
@@ -136,10 +143,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
       agenda: "",
       participants: [],
       selectedPrinciples: ["agile"],
-    transcript: [],
-    transcriptStream: null,
-    interventions: [],
-    speakerStats: {},
-    currentIntervention: null,
-  }),
+      transcript: [],
+      transcriptStream: null,
+      interventions: [],
+      speakerStats: {},
+      currentIntervention: null,
+    }),
 }));

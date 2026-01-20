@@ -90,9 +90,15 @@ class RealtimeSTTService:
         self._should_reconnect = False
         self._lock = asyncio.Lock()
         self._last_speech_end_at: float | None = None
+        self._response_transcripts: dict[str, str] = {}
+        self._partial_transcripts: dict[str, str] = {}
+        self._callback_semaphore = asyncio.Semaphore(
+            int(os.getenv("REALTIME_CALLBACK_CONCURRENCY", "4"))
+        )
 
         # Callbacks
         self._on_transcript: Optional[Callable] = None
+        self._on_partial_transcript: Optional[Callable] = None
         self._on_speech_end: Optional[Callable] = None
         self._on_error: Optional[Callable] = None
         self._on_connection_state_change: Optional[Callable] = None
@@ -136,6 +142,7 @@ class RealtimeSTTService:
         on_speech_end: Optional[Callable] = None,
         on_error: Optional[Callable] = None,
         on_connection_state_change: Optional[Callable] = None,
+        on_partial_transcript: Optional[Callable] = None,
     ) -> None:
         """
         Connect to the OpenAI Realtime API.
@@ -145,6 +152,7 @@ class RealtimeSTTService:
             on_speech_end: Optional async callback called when speech ends (VAD detected silence).
             on_error: Optional async callback called when an error occurs.
             on_connection_state_change: Optional callback for connection state changes.
+            on_partial_transcript: Optional async callback called with partial transcript updates.
 
         Raises:
             STTConfigurationError: If API key is not configured.
@@ -158,6 +166,7 @@ class RealtimeSTTService:
                 return
 
             self._on_transcript = on_transcript
+            self._on_partial_transcript = on_partial_transcript
             self._on_speech_end = on_speech_end
             self._on_error = on_error
             self._on_connection_state_change = on_connection_state_change
@@ -208,6 +217,8 @@ class RealtimeSTTService:
                         "threshold": vad_threshold,
                         "prefix_padding_ms": vad_prefix_ms,
                         "silence_duration_ms": vad_silence_ms,
+                        "create_response": False,
+                        "interrupt_response": False,
                     },
                 },
             }
@@ -318,18 +329,51 @@ class RealtimeSTTService:
             logger.debug("Session configuration updated")
             return
 
-        if event_type == "conversation.item.input_audio_transcription.completed":
-            transcript = data.get("transcript", "").strip()
+        if event_type == "response.audio_transcript.delta":
+            key = data.get("response_id") or data.get("item_id") or "unknown"
+            delta = data.get("delta") or data.get("text") or data.get("content") or ""
+            if delta:
+                self._response_transcripts[key] = self._response_transcripts.get(key, "") + delta
+                if self._on_partial_transcript:
+                    asyncio.create_task(
+                        self._run_callback(self._on_partial_transcript, key, self._response_transcripts[key])
+                    )
+            return
+
+        if event_type == "response.audio_transcript.done":
+            key = data.get("response_id") or data.get("item_id") or "unknown"
+            transcript = data.get("transcript") or data.get("text") or self._response_transcripts.pop(key, "")
+            transcript = (transcript or "").strip()
             logger.info(f"Transcription completed: '{transcript}'")
             if transcript and self._on_transcript:
-                try:
-                    latency_ms = None
-                    if self._last_speech_end_at is not None:
-                        latency_ms = max(0.0, (time.perf_counter() - self._last_speech_end_at) * 1000)
-                        self._last_speech_end_at = None
-                    await self._on_transcript(transcript, latency_ms)
-                except Exception as e:
-                    logger.error(f"Error in transcript callback: {e}", exc_info=True)
+                latency_ms = None
+                if self._last_speech_end_at is not None:
+                    latency_ms = max(0.0, (time.perf_counter() - self._last_speech_end_at) * 1000)
+                    self._last_speech_end_at = None
+                asyncio.create_task(self._run_callback(self._on_transcript, transcript, latency_ms, key))
+            return
+
+        if event_type == "conversation.item.input_audio_transcription.completed":
+            transcript = data.get("transcript", "").strip()
+            item_id = data.get("item_id")
+            logger.info(f"Transcription completed: '{transcript}'")
+            if transcript and self._on_transcript:
+                latency_ms = None
+                if self._last_speech_end_at is not None:
+                    latency_ms = max(0.0, (time.perf_counter() - self._last_speech_end_at) * 1000)
+                    self._last_speech_end_at = None
+                asyncio.create_task(self._run_callback(self._on_transcript, transcript, latency_ms, item_id))
+            return
+
+        if event_type == "conversation.item.input_audio_transcription.delta":
+            delta = data.get("delta", "")
+            item_id = data.get("item_id")
+            if delta and item_id:
+                self._partial_transcripts[item_id] = self._partial_transcripts.get(item_id, "") + delta
+                if self._on_partial_transcript:
+                    asyncio.create_task(
+                        self._run_callback(self._on_partial_transcript, item_id, self._partial_transcripts[item_id])
+                    )
             return
 
         if event_type == "conversation.item.input_audio_transcription.failed":
@@ -349,10 +393,7 @@ class RealtimeSTTService:
             logger.debug("Speech stopped")
             self._last_speech_end_at = time.perf_counter()
             if self._on_speech_end:
-                try:
-                    await self._on_speech_end()
-                except Exception as e:
-                    logger.error(f"Error in speech_end callback: {e}", exc_info=True)
+                asyncio.create_task(self._run_callback(self._on_speech_end))
             return
 
         if event_type == "input_audio_buffer.committed":
@@ -361,6 +402,13 @@ class RealtimeSTTService:
 
         # Log unhandled event types at debug level
         logger.debug(f"Unhandled event type: {event_type}")
+
+    async def _run_callback(self, callback: Callable, *args) -> None:
+        async with self._callback_semaphore:
+            try:
+                await callback(*args)
+            except Exception as e:
+                logger.error(f"Error in callback: {e}", exc_info=True)
 
     async def _handle_error(self, error: Exception) -> None:
         """Handle an error by notifying the callback if registered."""
