@@ -92,7 +92,18 @@ export default function MeetingRoomPage() {
     return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const handleMuteToggle = () => {
+  const handleMuteToggle = async () => {
+    if (!isRecording) {
+      try {
+        await start();
+        setIsMuted(false);
+        return;
+      } catch (error) {
+        console.error("Audio capture not available:", error);
+        return;
+      }
+    }
+
     if (isMuted) {
       resume();
     } else {
@@ -206,7 +217,7 @@ export default function MeetingRoomPage() {
       {/* 컨트롤 버튼 */}
       <div className="flex justify-center gap-4 mt-6">
         <Button variant="outline" onClick={handleMuteToggle}>
-          {isMuted ? "음소거 해제" : "음소거"}
+          {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
         </Button>
         <Button
           variant={isDemoMode ? "destructive" : "outline"}

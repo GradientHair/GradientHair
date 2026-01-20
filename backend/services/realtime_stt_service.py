@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from enum import Enum
 from typing import Callable, Optional
 
@@ -88,6 +89,7 @@ class RealtimeSTTService:
         self._reconnect_count = 0
         self._should_reconnect = False
         self._lock = asyncio.Lock()
+        self._last_speech_end_at: float | None = None
 
         # Callbacks
         self._on_transcript: Optional[Callable] = None
@@ -189,17 +191,23 @@ class RealtimeSTTService:
             logger.info("WebSocket connection established, configuring session...")
 
             # Configure the session for STT
+            vad_threshold = float(os.getenv("REALTIME_VAD_THRESHOLD", "0.7"))
+            vad_prefix_ms = int(os.getenv("REALTIME_VAD_PREFIX_MS", "300"))
+            vad_silence_ms = int(os.getenv("REALTIME_VAD_SILENCE_MS", "1200"))
             session_config = {
                 "type": "session.update",
                 "session": {
                     "modalities": ["text", "audio"],
                     "input_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "whisper-1"},
+                    "input_audio_transcription": {
+                        "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
+                        "language": os.getenv("REALTIME_TRANSCRIBE_LANGUAGE", "ko"),
+                    },
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 1500,
+                        "threshold": vad_threshold,
+                        "prefix_padding_ms": vad_prefix_ms,
+                        "silence_duration_ms": vad_silence_ms,
                     },
                 },
             }
@@ -315,7 +323,11 @@ class RealtimeSTTService:
             logger.info(f"Transcription completed: '{transcript}'")
             if transcript and self._on_transcript:
                 try:
-                    await self._on_transcript(transcript)
+                    latency_ms = None
+                    if self._last_speech_end_at is not None:
+                        latency_ms = max(0.0, (time.perf_counter() - self._last_speech_end_at) * 1000)
+                        self._last_speech_end_at = None
+                    await self._on_transcript(transcript, latency_ms)
                 except Exception as e:
                     logger.error(f"Error in transcript callback: {e}", exc_info=True)
             return
@@ -335,6 +347,7 @@ class RealtimeSTTService:
 
         if event_type == "input_audio_buffer.speech_stopped":
             logger.debug("Speech stopped")
+            self._last_speech_end_at = time.perf_counter()
             if self._on_speech_end:
                 try:
                     await self._on_speech_end()
