@@ -7,8 +7,12 @@ import sys
 import uuid
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
+
+load_dotenv()
 
 from agents.persona_dialogue_agent import PersonaDialogueAgent
 from models.meeting import MeetingState, Participant, TranscriptEntry
