@@ -172,7 +172,8 @@ async def test_page():
 
 @app.post("/api/v1/meetings")
 async def create_meeting(request: CreateMeetingRequest):
-    meeting_id = f"{datetime.now().strftime('%Y-%m-%d')}-{request.title.lower().replace(' ', '-')}"
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    meeting_id = f"{timestamp}-{request.title.lower().replace(' ', '-')}"
 
     participants = [
         Participant(id=p.get("id", str(uuid.uuid4())), name=p["name"], role=p["role"])
