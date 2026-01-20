@@ -33,6 +33,8 @@
 
 ## Required Workflow (Always)
 
+- 모든 개발은 별도 브랜치에서 수행하고 PR로 병합한다.
+
 1. 개발 완료 후, 동작 테스트를 먼저 수행한다.  
    - `scripts/run_smoke.sh` 실행 → `.last_test_run` 갱신
 2. 커밋은 에이전트가 직접 수행한다. (사람은 수행하지 않음)
