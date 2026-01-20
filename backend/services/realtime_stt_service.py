@@ -90,6 +90,7 @@ class RealtimeSTTService:
         self._should_reconnect = False
         self._lock = asyncio.Lock()
         self._last_speech_end_at: float | None = None
+        self._response_transcripts: dict[str, str] = {}
 
         # Callbacks
         self._on_transcript: Optional[Callable] = None
@@ -316,6 +317,29 @@ class RealtimeSTTService:
 
         if event_type == "session.updated":
             logger.debug("Session configuration updated")
+            return
+
+        if event_type == "response.audio_transcript.delta":
+            key = data.get("response_id") or data.get("item_id") or "unknown"
+            delta = data.get("delta") or data.get("text") or data.get("content") or ""
+            if delta:
+                self._response_transcripts[key] = self._response_transcripts.get(key, "") + delta
+            return
+
+        if event_type == "response.audio_transcript.done":
+            key = data.get("response_id") or data.get("item_id") or "unknown"
+            transcript = data.get("transcript") or data.get("text") or self._response_transcripts.pop(key, "")
+            transcript = (transcript or "").strip()
+            logger.info(f"Transcription completed: '{transcript}'")
+            if transcript and self._on_transcript:
+                try:
+                    latency_ms = None
+                    if self._last_speech_end_at is not None:
+                        latency_ms = max(0.0, (time.perf_counter() - self._last_speech_end_at) * 1000)
+                        self._last_speech_end_at = None
+                    await self._on_transcript(transcript, latency_ms)
+                except Exception as e:
+                    logger.error(f"Error in transcript callback: {e}", exc_info=True)
             return
 
         if event_type == "conversation.item.input_audio_transcription.completed":
