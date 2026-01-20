@@ -403,7 +403,8 @@ class ParticipantFeedbackAgent:
         total = sum(p.speaking_count for p in state.participants) or 1
         share = round(participant.speaking_count / total * 100, 1)
 
-        return f"""당신은 회의 코치입니다. 특정 참석자에게 개인 피드백을 제공합니다.
+        return f"""당신은 회의 코치입니다. 특정 참석자에게 개인 피드백을 매우 간결하게 제공합니다.
+각 항목은 한 문장, 1~2개 bullet만 작성하세요. 장황한 설명은 금지합니다.
 
 참석자: {participant.name} ({participant.role})
 발언 비중: {share}%
@@ -418,9 +419,9 @@ class ParticipantFeedbackAgent:
 
 JSON으로 응답하세요:
 {{
-  "positives": ["잘한 점1", "잘한 점2"],
-  "improvements": ["개선점1", "개선점2"],
-  "private_notes": ["비공개 메모1"]
+  "positives": ["잘한 점 1~2개 (각 1문장)"],
+  "improvements": ["개선점 1~2개 (각 1문장)"],
+  "private_notes": ["비공개 메모 0~1개 (1문장)"]
 }}
 """
 
