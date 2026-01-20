@@ -1055,6 +1055,8 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
 
                 def stream_callback(speaker_name: str, chunk: str):
                     nonlocal prefix_written, ts
+                    if not agent_mode_enabled:
+                        return
                     if not prefix_written:
                         storage.append_transcription_stream(
                             state.meeting_id, f"\n[{ts}] {speaker_name}: "
@@ -1087,6 +1089,9 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                         True,
                         stream_callback,
                     )
+                except asyncio.CancelledError:
+                    agent_mode_enabled = False
+                    break
                 except Exception as e:
                     logger.error(f"[{meeting_id}] Agent mode generation failed: {e}", exc_info=True)
                     await manager.send_message(
@@ -1103,12 +1108,15 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                     agent_mode_enabled = False
                     break
 
+                if not agent_mode_enabled:
+                    break
+
                 if not utterances:
                     await asyncio.sleep(0.5)
                     continue
 
                 utt = utterances[0]
-                if prefix_written:
+                if prefix_written and agent_mode_enabled:
                     storage.append_transcription_stream(state.meeting_id, "\n")
 
                 entry = TranscriptEntry(

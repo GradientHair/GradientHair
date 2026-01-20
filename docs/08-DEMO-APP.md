@@ -1,7 +1,7 @@
 # Meeting Operator Demo App
 
 This demo app turns the PRD + demo scenario into a runnable prototype. It uses:
-- **Python + OpenAI SDK** for recap generation (optional if no key)
+- **Python + OpenAI SDK** for recap generation (required for hackathon submission; optional only for local demo if no key)
 - **React (Vite)** for the operator UI
 - **Docker Compose** for one-command startup
 
@@ -14,6 +14,7 @@ Mapped to the docs you provided:
 - **Meeting recap + action items + saved markdown files** → `docs/02-ARCHITECTURE.md`
 
 This is the **“first version”**: it simulates an online meeting stream with test text. The next step is to swap the transcript source to live audio + Realtime API.
+Note: this demo app is a lightweight prototype; the hackathon target stack uses Next.js + shadcn/ui per the requirements docs.
 
 ---
 

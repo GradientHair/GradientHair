@@ -30,7 +30,7 @@ Priority: CRITICAL
 
 2. **음성 캡처 & STT**
    - 브라우저 마이크 캡처 (Web Audio API)
-   - OpenAI Whisper API 연동
+   - OpenAI Realtime API 연동
    - 실시간 자막 표시
    - AI 자동 화자 분리 (참석자 목록 기반)
 
@@ -193,7 +193,7 @@ meetingmod/
 │   │   └── review_agent.py         # Review Agent
 │   │
 │   ├── services/
-│   │   ├── stt_service.py          # Whisper STT
+│   │   ├── stt_service.py          # Realtime STT
 │   │   ├── speaker_service.py      # AI 화자 분리
 │   │   └── storage_service.py      # Markdown 파일 저장
 │   │
@@ -1145,7 +1145,7 @@ export class DemoSimulator {
 - [ ] WebSocket 연결 (Frontend ↔ Backend)
 - [ ] 마이크 오디오 캡처 (Web Audio API)
 - [ ] 침묵 감지 로직 (1.5초 임계값)
-- [ ] Whisper STT 연동 (한국어)
+- [ ] Realtime STT 연동 (한국어)
 - [ ] AI 화자 분리 서비스
 - [ ] Moderator Agent 구현 (발화 멈춤 시 개입)
 - [ ] 경고음 재생 컴포넌트
@@ -1182,7 +1182,7 @@ export class DemoSimulator {
          │
          ▼
 ┌─────────────────┐     ┌─────────────────┐
-│ WebSocket 전송   │────▶│ Whisper STT     │
+│ WebSocket 전송   │────▶│ Realtime STT    │
 │ (3초 청크)       │     │ (한국어 변환)     │
 └─────────────────┘     └────────┬────────┘
                                  │
