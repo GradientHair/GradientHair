@@ -135,11 +135,15 @@ class MeetingEvaluationAgent:
         interventions_text = self._format_interventions(state.interventions)
         participants_text = ", ".join([p.name for p in state.participants]) or "없음"
         index_text = self._build_transcript_index(state.transcript)
+        context_text = self._format_action_item_context(state)
 
         return f"""당신은 회의 품질 리뷰어입니다. 회의가 원칙에 맞게 잘 진행되었는지 평가하세요.
 
 회의 제목: {state.title}
 참석자: {participants_text}
+
+회의 컨텍스트(액션 아이템 작성 시 반드시 참고):
+{context_text}
 
 원칙:
 {principles_text}
@@ -199,6 +203,10 @@ JSON으로 응답하세요:
         if not assessments:
             assessments = self._fallback_principle_assessments(state, principles)
 
+        action_items = [a.model_dump() for a in payload.action_items]
+        if not action_items:
+            action_items = self._fallback_action_items(state)
+
         return MeetingEvaluation(
             overall_score=int(payload.overall_score),
             summary=str(payload.summary),
@@ -206,7 +214,7 @@ JSON으로 응답하세요:
             risks=[str(r) for r in payload.risks],
             recommendations=[str(r) for r in payload.recommendations],
             principle_assessments=assessments,
-            action_items=[a.model_dump() for a in payload.action_items],
+            action_items=action_items,
         )
 
     def _fallback_evaluation(
@@ -283,6 +291,22 @@ JSON으로 응답하세요:
         lines = [
             f"- {inv.intervention_type.value}: {inv.message}"
             for inv in interventions[-10:]
+        ]
+        return "\n".join(lines)
+
+    def _format_action_item_context(self, state: MeetingState) -> str:
+        agenda = state.agenda.strip() if state.agenda else ""
+        parking = ", ".join(state.parking_lot) if state.parking_lot else "없음"
+        trigger_contexts = [
+            inv.trigger_context
+            for inv in state.interventions
+            if inv.trigger_context
+        ]
+        trigger_summary = "; ".join(trigger_contexts[-5:]) if trigger_contexts else "없음"
+        lines = [
+            f"- 아젠다: {agenda or '없음'}",
+            f"- Parking Lot: {parking}",
+            f"- 개입 컨텍스트: {trigger_summary}",
         ]
         return "\n".join(lines)
 

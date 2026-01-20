@@ -170,6 +170,8 @@ class StorageService:
             "preparation": read_optional(meeting_dir / "preparation.md"),
             "transcript": read_optional(meeting_dir / "transcript.md"),
             "interventions": read_optional(meeting_dir / "interventions.md"),
+            "summary": read_optional(meeting_dir / "summary.md"),
+            "actionItems": read_optional(meeting_dir / "action-items.md"),
         }
 
     async def save_preparation(self, state: MeetingState):

@@ -540,6 +540,8 @@ class MeetingFilesResponse(BaseModel):
     preparation: str | None
     transcript: str | None
     interventions: str | None
+    summary: str | None = None
+    actionItems: str | None = None
 
 
 @app.get("/api/v1/meetings", response_model=MeetingListResponse)
