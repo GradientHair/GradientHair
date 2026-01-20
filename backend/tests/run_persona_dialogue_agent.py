@@ -73,6 +73,7 @@ def main() -> None:
             recent_transcript=state.transcript,
             turns=1,
             seed=seed,
+            turn_offset=idx,
             stream=not args.no_stream,
         )
         latency = int((monotonic() - start) * 1000)

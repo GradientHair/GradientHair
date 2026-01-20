@@ -1041,6 +1041,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             for _ in range(len(state.participants)):
                 prefix_written = False
                 ts = datetime.utcnow().isoformat()
+                turn_offset = _
 
                 def stream_callback(speaker_name: str, chunk: str):
                     nonlocal prefix_written, ts
@@ -1072,6 +1073,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                         state.transcript[-12:],
                         1,
                         None,
+                        turn_offset,
                         True,
                         stream_callback,
                     )
