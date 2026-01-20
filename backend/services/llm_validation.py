@@ -1,4 +1,5 @@
 """Structured-output validation pipeline for LLM responses."""
+
 from __future__ import annotations
 
 import os
@@ -27,6 +28,7 @@ class DSPyValidator:
         if self.enabled:
             try:
                 import dspy  # type: ignore
+
                 self._dspy = dspy
             except Exception:
                 self._dspy = None
@@ -49,7 +51,10 @@ class DSPyValidator:
             predictor = dspy.Predict(ValidateJSON)
             result = predictor(input_json=payload.model_dump_json())
             if not getattr(result, "is_valid", False):
-                return ValidationResult(ok=False, error=str(getattr(result, "reason", "DSPy validation failed")))
+                return ValidationResult(
+                    ok=False,
+                    error=str(getattr(result, "reason", "DSPy validation failed")),
+                )
         except Exception as exc:
             return ValidationResult(ok=False, error=f"DSPy validation error: {exc}")
 
@@ -75,8 +80,15 @@ class LLMStructuredOutputRunner:
         self.custom_validator = custom_validator
         self.dspy_validator = DSPyValidator() if use_dspy else None
 
-    def _collect_stream_content(self, stream) -> str:
+    def _collect_stream_content(self, stream, print_to_terminal: bool = False) -> str:
+        """Collect streaming content and optionally print to terminal in real-time."""
         chunks: list[str] = []
+
+        if print_to_terminal:
+            print("\n" + "=" * 60)
+            print("LLM Response Stream:")
+            print("=" * 60)
+
         for event in stream:
             delta = None
             if event.choices:
@@ -84,22 +96,54 @@ class LLMStructuredOutputRunner:
             if not delta:
                 continue
             content = getattr(delta, "content", None)
-            if content:
+
+            # Handle string content
+            if isinstance(content, str):
                 chunks.append(content)
+                if print_to_terminal:
+                    print(content, end="", flush=True)
+            # Handle list content
+            elif isinstance(content, list):
+                for part in content:
+                    text = None
+                    if hasattr(part, "text"):
+                        text = getattr(part, "text", None)
+                    elif isinstance(part, dict):
+                        text = part.get("text")
+                    if text:
+                        chunks.append(text)
+                        if print_to_terminal:
+                            print(text, end="", flush=True)
+
+        if print_to_terminal:
+            print("\n" + "=" * 60 + "\n")
+
         return "".join(chunks)
 
-    def run(self, prompt: str, stream: bool = False) -> Optional[T]:
+    def run(
+        self, prompt: str, stream: bool = False, print_stream: bool = False
+    ) -> Optional[T]:
+        """
+        Run the LLM with structured output validation.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            stream: Whether to use streaming mode
+            print_stream: Whether to print streaming output to terminal (only works if stream=True)
+        """
         last_error: Optional[str] = None
-        for _ in range(self.max_retries + 1):
+        for attempt in range(self.max_retries + 1):
             messages = [{"role": "user", "content": prompt}]
             if last_error:
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "이전 응답 처리 중 오류가 발생했습니다: "
-                        f"{last_error}. 올바른 JSON만 다시 출력하세요."
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "이전 응답 처리 중 오류가 발생했습니다: "
+                            f"{last_error}. 올바른 JSON만 다시 출력하세요."
+                        ),
+                    }
+                )
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
@@ -107,24 +151,41 @@ class LLMStructuredOutputRunner:
                     response_format={"type": "json_object"},
                     stream=stream,
                 )
+
                 if stream:
-                    content = self._collect_stream_content(response)
+                    # Print retry attempt info if retrying
+                    if attempt > 0 and print_stream:
+                        print(f"\n[Retry attempt {attempt}/{self.max_retries}]")
+
+                    content = self._collect_stream_content(
+                        response, print_to_terminal=print_stream
+                    )
                 else:
                     content = response.choices[0].message.content
+
                 parsed = self.schema.model_validate_json(content)
+
                 if self.custom_validator:
                     check = self.custom_validator(parsed)
                     if not check.ok:
                         last_error = check.error or "custom validation failed"
                         continue
+
                 if self.dspy_validator:
                     dspy_result = self.dspy_validator.validate(parsed)
                     if not dspy_result.ok:
                         last_error = dspy_result.error
                         continue
+
                 return parsed
+
             except ValidationError as exc:
                 last_error = str(exc)
+                if print_stream:
+                    print(f"\n[Validation Error: {last_error}]")
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
+                if print_stream:
+                    print(f"\n[Error: {last_error}]")
+
         return None

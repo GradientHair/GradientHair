@@ -1,16 +1,18 @@
 """Persona Dialogue Agent - 페르소나 기반 회의 대화 생성."""
+
 from __future__ import annotations
 
 import os
 import random
+import uuid
+from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Callable
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from models.meeting import MeetingState, TranscriptEntry
-from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
 from services.model_router import ModelRouter
 
 
@@ -34,10 +36,6 @@ class PersonaDialogueTurn(BaseModel):
     is_agile_violation: bool = Field(...)
 
 
-class PersonaDialogueResponse(BaseModel):
-    utterances: list[PersonaDialogueTurn] = Field(default_factory=list)
-
-
 @dataclass
 class PersonaAssignment:
     name: str
@@ -53,21 +51,17 @@ class PersonaDialogueAgent:
         off_topic_rate: float = 0.12,
         agile_violation_rate: float = 0.1,
         max_retries: int = 2,
+        stream: bool = True,
     ):
         self.off_topic_rate = max(0.0, min(1.0, off_topic_rate))
         self.agile_violation_rate = max(0.0, min(1.0, agile_violation_rate))
+        self.stream = stream
         self._assignments: dict[str, dict[str, str]] = {}
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
-        self.runner: Optional[LLMStructuredOutputRunner] = None
+        self.model: Optional[str] = None
         if self.client:
-            choice = ModelRouter.select("fast", structured_output=True, api="chat")
-            self.runner = LLMStructuredOutputRunner(
-                client=self.client,
-                model=choice.model,
-                schema=PersonaDialogueResponse,
-                max_retries=max_retries,
-                custom_validator=self._validate_response,
-            )
+            choice = ModelRouter.select("fast", structured_output=False, api="chat")
+            self.model = choice.model
 
     def assign_personas(
         self,
@@ -86,11 +80,13 @@ class PersonaDialogueAgent:
             if not persona:
                 persona = rng.choice(PERSONA_POOL)
                 existing[p_key] = persona
-            assignments.append(PersonaAssignment(
-                name=participant.name,
-                persona=persona,
-                role=participant.role,
-            ))
+            assignments.append(
+                PersonaAssignment(
+                    name=participant.name,
+                    persona=persona,
+                    role=participant.role,
+                )
+            )
         self._assignments[key] = existing
         return assignments
 
@@ -100,65 +96,102 @@ class PersonaDialogueAgent:
         recent_transcript: list[TranscriptEntry],
         turns: int = 3,
         seed: Optional[int] = None,
-        stream: bool = True,
+        stream: Optional[bool] = None,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
     ) -> list[PersonaDialogueTurn]:
         if not state.participants or turns < 1:
             return []
 
-        if self.runner is None:
-            raise RuntimeError("LLM runner unavailable. Set OPENAI_API_KEY to enable real mode.")
+        if not self.client or not self.model:
+            raise RuntimeError("LLM unavailable. Set OPENAI_API_KEY to enable.")
 
         rng = random.Random(seed)
         assignments = self.assign_personas(state, rng=rng)
         if not assignments:
             return []
 
-        planned_turns = self._plan_turns(assignments, turns, rng)
-        prompt = self._build_prompt(state, recent_transcript, planned_turns)
-        parsed = self.runner.run(prompt, stream=stream)
-        if parsed and parsed.utterances:
-            return parsed.utterances
-        raise RuntimeError("LLM generation failed. Check model access or prompt constraints.")
+        use_stream = self.stream if stream is None else stream
+        all_utterances: list[PersonaDialogueTurn] = []
 
-    def _plan_turns(
+        # 각 턴마다 1개씩 발언 생성
+        for turn_idx in range(turns):
+            # 현재 턴의 발언 계획 (1개만)
+            planned_turn = self._plan_single_turn(assignments, turn_idx, rng)
+
+            # 최근 대화에 이전 생성된 발언들 포함
+            # Build a temporary transcript that mimics real entries to keep the prompt format consistent
+            current_transcript = recent_transcript + [
+                TranscriptEntry(
+                    id=f"tmp_{uuid.uuid4().hex[:8]}",
+                    speaker=utt.speaker,
+                    text=utt.text,
+                    timestamp=datetime.utcnow().isoformat(),
+                )
+                for utt in all_utterances
+            ]
+
+            prompt = self._build_prompt(state, current_transcript, planned_turn)
+
+            if use_stream:
+                print(f"\n{'='*60}")
+                print(f"Turn {turn_idx + 1}/{turns} - Speaker: {planned_turn.speaker}")
+                print(f"{'='*60}")
+
+            text = self._generate_utterance_text(
+                prompt=prompt,
+                stream=use_stream,
+                print_stream=use_stream,
+                stream_callback=stream_callback,
+                speaker=planned_turn.speaker,
+            )
+            if not text:
+                raise RuntimeError(f"LLM generation failed at turn {turn_idx + 1}")
+
+            clean_text = self._strip_speaker_prefix(text)
+            clean_text = self._remove_brackets(clean_text)
+
+            utterance = PersonaDialogueTurn(
+                speaker=planned_turn.speaker,
+                text=clean_text,
+                is_off_topic=planned_turn.is_off_topic,
+                is_agile_violation=planned_turn.is_agile_violation,
+            )
+            all_utterances.append(utterance)
+
+        return all_utterances
+
+    def _plan_single_turn(
         self,
         assignments: list[PersonaAssignment],
-        turns: int,
+        turn_idx: int,
         rng: random.Random,
-    ) -> list[PersonaDialogueTurn]:
+    ) -> PersonaDialogueTurn:
+        """단일 턴의 발언 계획 생성"""
         speakers = [a.name for a in assignments]
-        rng.shuffle(speakers)
-        planned: list[PersonaDialogueTurn] = []
-        for idx in range(turns):
-            speaker = speakers[idx % len(speakers)]
-            planned.append(
-                PersonaDialogueTurn(
-                    speaker=speaker,
-                    text="",
-                    is_off_topic=rng.random() < self.off_topic_rate,
-                    is_agile_violation=rng.random() < self.agile_violation_rate,
-                )
-            )
-        return planned
+        speaker = speakers[turn_idx % len(speakers)]
+
+        return PersonaDialogueTurn(
+            speaker=speaker,
+            text="",
+            is_off_topic=rng.random() < self.off_topic_rate,
+            is_agile_violation=rng.random() < self.agile_violation_rate,
+        )
 
     def _build_prompt(
         self,
         state: MeetingState,
         recent_transcript: list[TranscriptEntry],
-        planned_turns: list[PersonaDialogueTurn],
+        planned_turn: PersonaDialogueTurn,
     ) -> str:
         agenda = state.agenda or "아젠다 없음"
-        recent_text = "\n".join(
-            f"{t.speaker}: {t.text}" for t in recent_transcript[-6:]
-        ) or "최근 대화 없음"
+        recent_text = (
+            "\n".join(f"{t.speaker}: {t.text}" for t in recent_transcript[-8:])
+            or "최근 대화 없음"
+        )
         assignments = self.assign_personas(state)
         persona_lines = "\n".join(
             f"- {a.name} ({a.role}): {a.persona} — {PERSONA_GUIDES.get(a.persona, '')}"
             for a in assignments
-        )
-        planned_lines = "\n".join(
-            f"- speaker={turn.speaker} | off_topic={turn.is_off_topic} | agile_violation={turn.is_agile_violation}"
-            for turn in planned_turns
         )
 
         return f"""당신은 회의 발언을 생성하는 어시스턴트입니다.
@@ -173,33 +206,112 @@ class PersonaDialogueAgent:
 페르소나:
 {persona_lines}
 
-생성해야 할 발언 계획:
-{planned_lines}
+다음 발언자 정보:
+- speaker: {planned_turn.speaker}
+- off_topic: {planned_turn.is_off_topic}
+- agile_violation: {planned_turn.is_agile_violation}
 
 규칙:
-- 각 speaker에 대해 1개의 발언을 생성한다.
-- off_topic=true인 경우, 아젠다와 무관한 가벼운 잡담을 포함한다.
-- agile_violation=true인 경우, 해당 발언자가 본인 주장을 밀고 나가는 표현을 넣는다.
-- 나머지 발언은 아젠다 기반으로 업무 수행 방법을 논의한다.
-- 각 발언은 직전 발언을 이어 받아 한 단계씩 구체화한다.
-- 같은 문장을 반복하지 않는다.
-- 반드시 한국어 구어체로 자연스럽고 현실적인 톤으로 작성한다.
-- 번호 매기기(예: 1), (1), ①)나 목록형 문장 대신, 대화체 한 문장/두 문장으로 말하듯이 작성한다.
+- {planned_turn.speaker}의 발언 **1개만** 생성합니다.
+- off_topic=true인 경우, 아젠다와 무관한 가벼운 잡담을 포함합니다.
+- agile_violation=true인 경우, 해당 발언자가 본인 주장을 밀고 나가는 표현을 넣습니다.
+- 나머지는 아젠다 기반으로 **최근 대화를 자연스럽게 이어받아** 업무 수행 방법을 논의합니다.
+- 직전 발언을 참고해서 구체화하거나 보완하는 내용으로 작성합니다.
+- 같은 문장이나 비슷한 표현을 반복하지 않습니다.
+- 반드시 한국어 구어체로 자연스럽고 현실적인 톤으로 작성합니다.
+- 번호 매기기나 목록형 문장 대신, 대화체로 1~2문장 정도로 간결하게 작성합니다.
+- 괄호 (), [], 중괄호, <> 등 어떤 형태의 괄호도 사용하지 마세요.
+- 스피커 이름이나 off_topic, agile_violation 여부를 문장에 표기하지 마세요.
 
-JSON 응답:
-{{
-  "utterances": [
-    {{
-      "speaker": "이름",
-      "text": "발언",
-      "is_off_topic": true/false,
-      "is_agile_violation": true/false
-    }}
-  ]
-}}
+출력 형식:
+- 스피커 이름이나 따옴표 없이 한글 대화문 **한 문단**만 반환합니다.
+- 예시: 그러면 이번 스프린트에 API 응답 캐싱부터 적용해보고, 로그 지표는 제가 정리할게요.
 """
 
-    def _validate_response(self, parsed: PersonaDialogueResponse) -> ValidationResult:
-        if not parsed.utterances:
-            return ValidationResult(ok=False, error="utterances required")
-        return ValidationResult(ok=True, value=parsed)
+    def _generate_utterance_text(
+        self,
+        prompt: str,
+        stream: bool = False,
+        print_stream: bool = False,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
+        speaker: Optional[str] = None,
+    ) -> str:
+        """LLM에 대화 생성만 요청하고 텍스트를 반환한다."""
+        messages = [{"role": "user", "content": prompt}]
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=stream,
+        )
+
+        if stream:
+            return self._collect_stream_text(
+                response,
+                print_to_terminal=print_stream,
+                stream_callback=stream_callback,
+                speaker=speaker,
+            )
+
+        return (response.choices[0].message.content or "").strip()
+
+    def _collect_stream_text(
+        self,
+        stream,
+        print_to_terminal: bool = False,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
+        speaker: Optional[str] = None,
+    ) -> str:
+        """스트리밍 응답에서 텍스트만 추출한다."""
+        chunks: list[str] = []
+        for event in stream:
+            delta = None
+            if event.choices:
+                delta = getattr(event.choices[0], "delta", None)
+            if not delta:
+                continue
+            content = getattr(delta, "content", None)
+
+            if isinstance(content, str):
+                chunks.append(content)
+                if print_to_terminal:
+                    print(content, end="", flush=True)
+                if stream_callback and content:
+                    stream_callback(speaker or "", content)
+            elif isinstance(content, list):
+                for part in content:
+                    text = None
+                    if hasattr(part, "text"):
+                        text = getattr(part, "text", None)
+                    elif isinstance(part, dict):
+                        text = part.get("text")
+                    if text:
+                        chunks.append(text)
+                        if print_to_terminal:
+                            print(text, end="", flush=True)
+                        if stream_callback:
+                            stream_callback(speaker or "", text)
+
+        if print_to_terminal:
+            print()
+
+        return "".join(chunks).strip()
+
+    @staticmethod
+    def _strip_speaker_prefix(text: str) -> str:
+        """Remove accidental 'Name:' prefixes from the model output."""
+        stripped = text.lstrip()
+        for sep in (":", "：", "-", " -"):
+            if sep in stripped:
+                name, rest = stripped.split(sep, 1)
+                # Heuristic: very short name (<=5 chars) followed by text
+                if len(name.strip()) <= 5 and rest.strip():
+                    return rest.strip()
+        return stripped
+
+    @staticmethod
+    def _remove_brackets(text: str) -> str:
+        """괄호류 문자를 모두 제거해 구어체에 남지 않도록 한다."""
+        brackets = "()[]{}<>（）［］｛｝＜＞【】"
+        cleaned = "".join(ch for ch in text if ch not in brackets)
+        # collapse double spaces caused by removals
+        return " ".join(cleaned.split())
