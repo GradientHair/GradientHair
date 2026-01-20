@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f5f0e6;
+  --card: #fffaf2;
+  --ink: #1b1610;
+  --muted: #6f6456;
+  --accent: #f05a2b;
+  --accent-2: #1c7b68;
+  --accent-3: #243055;
+  --ring: #f2c175;
+  --shadow: 0 30px 80px rgba(27, 22, 16, 0.16);
+  --shadow-soft: 0 18px 40px rgba(27, 22, 16, 0.12);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-3: var(--accent-3);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: radial-gradient(circle at 15% 20%, rgba(240, 90, 43, 0.15), transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(28, 123, 104, 0.18), transparent 40%),
+    radial-gradient(circle at 60% 90%, rgba(36, 48, 85, 0.12), transparent 42%),
+    var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body), "IBM Plex Sans", sans-serif;
+}
+
+::selection {
+  background: rgba(240, 90, 43, 0.2);
+}
+
+input,
+select,
+button,
+textarea {
+  font: inherit;
+}

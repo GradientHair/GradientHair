@@ -1,10 +1,8 @@
 # Progress Log
 
 ## 2026-01-20
-- Initialized planning files via planning-with-files skill.
-- Collected local skill inventory from `~/.codex/skills` and `~/.claude/skills`.
-- Identified copy targets: `multi-agent-guide`, `planning-with-files`, `openai-agents-python`.
-- Copied local skills into repo: `planning-with-files`, `openai-agents-python`, updated `multi-agent-guide` with `SKILL.md`.
-- Updated `README.md` to list new skills.
-- Verified `planning-with-files` and `openai-agents-python` match local Codex copies (excluding nested .git).
-- Push rejected due to remote updates; attempted pull --rebase but blocked by unstaged planning file update.
+- Logged new task: design localhost meeting webtool with camera + voice.
+- Captured core requirements and initial technical decisions.
+- Initialized Next.js frontend scaffold in `frontend/`.
+- Implemented camera/mic preview UI with device selectors, status panels, and controls.
+- Added transcript streaming UI, save-to-text, and agent registry scaffolding.

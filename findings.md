@@ -1,26 +1,21 @@
 # Findings & Decisions
 
 ## Requirements
-- Copy local Claude and Codex skill directories into this repo so collaborators can clone and use them.
-- Include skills from `~/.codex/skills` and `~/.claude/skills` (non-system skills).
-- Push changes to the existing Git remote.
+- App must run on localhost.
+- Provide camera and voice interface (mic + speaker) in browser.
 
-## Research Findings
-- Codex skills present locally: `multi-agent-guide`, `openai-agents-python`, `planning-with-files`, plus `.system` (system skills; should not be shared).
-- Claude skills present locally: `openai-agents-python` (same contents as Codex copy).
-- Current repo already includes `multi-agent-guide`, but with `skill.md` (lowercase) instead of `SKILL.md`.
-- `planning-with-files` contains a nested `.git` directory that must be excluded when copying.
+## Assumptions
+- Single user can host a room; others can join via URL on same machine/network (localhost for development).
+- Browser permissions are acceptable (getUserMedia).
 
 ## Technical Decisions
 | Decision | Rationale |
 |----------|-----------|
-| Copy only non-system skills into repo root as top-level skill directories. | Keeps repo clean and matches expected skill layout for cloning. |
-| Exclude `.git` when copying `planning-with-files`. | Avoid nested git repository issues. |
+| Use WebRTC for media | Standard browser API for camera/mic with low latency. |
+| Use a lightweight signaling server | Needed for SDP/ICE exchange. |
 
-## Issues Encountered
-| Issue | Resolution |
-|-------|------------|
-| - | - |
-
-## Resources
-- Local skill directories at `~/.codex/skills` and `~/.claude/skills`.
+## Risks
+| Risk | Mitigation |
+|------|------------|
+| NAT traversal on localhost testing is limited | Keep dev on same machine; later add STUN/TURN for real use. |
+| Device permission UX can confuse users | Add clear pre-join preview and permission prompts. |
