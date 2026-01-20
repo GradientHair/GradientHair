@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from models.meeting import MeetingState, Participant, TranscriptEntry, Intervention
 from services.principles_service import PrinciplesService
 from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
+from services.model_router import ModelRouter
 
 
 @dataclass
@@ -95,9 +96,10 @@ class MeetingEvaluationAgent:
         self.max_retries = 2
         self.runner = None
         if self.client:
+            choice = ModelRouter.select("reasoning", structured_output=True, api="chat")
             self.runner = LLMStructuredOutputRunner(
                 client=self.client,
-                model="gpt-4o-mini",
+                model=choice.model,
                 schema=EvaluationResponse,
                 max_retries=self.max_retries,
                 custom_validator=self._validate_evaluation_response,
@@ -324,9 +326,10 @@ class ParticipantFeedbackAgent:
         self.max_retries = 2
         self.runner = None
         if self.client:
+            choice = ModelRouter.select("fast", structured_output=True, api="chat")
             self.runner = LLMStructuredOutputRunner(
                 client=self.client,
-                model="gpt-4o-mini",
+                model=choice.model,
                 schema=ParticipantFeedbackResponse,
                 max_retries=self.max_retries,
                 custom_validator=self._validate_feedback_response,

@@ -18,6 +18,7 @@ from services.storage_service import StorageService
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
+from services.model_router import ModelRouter
 
 
 @dataclass
@@ -118,9 +119,10 @@ class SafetyCheckAgent:
         self.max_retries = 2
         self.runner = None
         if self.client:
+            choice = ModelRouter.select("fast", structured_output=True, api="chat")
             self.runner = LLMStructuredOutputRunner(
                 client=self.client,
-                model="gpt-4o-mini",
+                model=choice.model,
                 schema=SafetyCheckResponse,
                 max_retries=self.max_retries,
                 custom_validator=self._validate_response,
