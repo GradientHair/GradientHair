@@ -707,6 +707,9 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     except Exception as e:
         logger.error(f"Failed to accept WebSocket: {e}", exc_info=True)
         return
+    mode = (websocket.query_params.get("mode") or "audio").lower()
+    stt_enabled = mode != "agent"
+    logger.info(f"[{meeting_id}] Meeting mode: {mode} (stt_enabled={stt_enabled})")
 
     state = meetings.get(meeting_id)
     if not state:
@@ -1132,44 +1135,47 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         logger.info(f"[{meeting_id}] Agent mode stopped")
 
     stt_connected = False
-    try:
-        await stt_service.connect(
-            on_transcript,
-            on_speech_end,
-            on_error=on_stt_error,
-            on_connection_state_change=on_connection_state_change,
-            on_partial_transcript=on_partial_transcript,
-        )
-        stt_connected = True
-        logger.info(f"Realtime STT connected for meeting {meeting_id}")
-    except STTConfigurationError as e:
-        logger.error(f"STT configuration error: {e}")
-        await manager.send_message(
-            meeting_id,
-            {
-                "type": "error",
-                "data": {
-                    "code": "STT_CONFIGURATION_ERROR",
-                    "message": "Speech-to-text service is not properly configured",
-                    "recoverable": False,
+    if stt_enabled:
+        try:
+            await stt_service.connect(
+                on_transcript,
+                on_speech_end,
+                on_error=on_stt_error,
+                on_connection_state_change=on_connection_state_change,
+                on_partial_transcript=on_partial_transcript,
+            )
+            stt_connected = True
+            logger.info(f"Realtime STT connected for meeting {meeting_id}")
+        except STTConfigurationError as e:
+            logger.error(f"STT configuration error: {e}")
+            await manager.send_message(
+                meeting_id,
+                {
+                    "type": "error",
+                    "data": {
+                        "code": "STT_CONFIGURATION_ERROR",
+                        "message": "Speech-to-text service is not properly configured",
+                        "recoverable": False,
+                    },
                 },
-            },
-        )
-    except STTConnectionError as e:
-        logger.error(f"STT connection error: {e}")
-        await manager.send_message(
-            meeting_id,
-            {
-                "type": "error",
-                "data": {
-                    "code": "STT_CONNECTION_ERROR",
-                    "message": "Failed to connect to speech-to-text service",
-                    "recoverable": True,
+            )
+        except STTConnectionError as e:
+            logger.error(f"STT connection error: {e}")
+            await manager.send_message(
+                meeting_id,
+                {
+                    "type": "error",
+                    "data": {
+                        "code": "STT_CONNECTION_ERROR",
+                        "message": "Failed to connect to speech-to-text service",
+                        "recoverable": True,
+                    },
                 },
-            },
-        )
-    except Exception as e:
-        logger.error(f"Unexpected STT error: {e}", exc_info=True)
+            )
+        except Exception as e:
+            logger.error(f"Unexpected STT error: {e}", exc_info=True)
+    else:
+        logger.info(f"[{meeting_id}] STT disabled for agent meeting; skipping connection")
 
     audio_chunk_count = 0
     logger.info(f"[{meeting_id}] Entering receive loop, waiting for audio...")
@@ -1257,6 +1263,9 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 continue
 
             if message_type == "audio":
+                if not stt_enabled:
+                    logger.warning(f"[{meeting_id}] Audio received but STT disabled; dropping chunk")
+                    continue
                 audio_chunk_count += 1
                 audio_size = len(data.get("data", ""))
                 logger.info(f"[{meeting_id}] Audio chunk #{audio_chunk_count} received, size: {audio_size} bytes")
@@ -1280,7 +1289,8 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             except asyncio.CancelledError:
                 pass
         manager.disconnect(meeting_id)
-        await stt_service.disconnect()
+        if stt_enabled:
+            await stt_service.disconnect()
         await storage.save_transcript(state)
         await storage.save_interventions(state)
     except Exception as e:
@@ -1293,7 +1303,8 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             except asyncio.CancelledError:
                 pass
         manager.disconnect(meeting_id)
-        await stt_service.disconnect()
+        if stt_enabled:
+            await stt_service.disconnect()
         await storage.save_transcript(state)
         await storage.save_interventions(state)
 

@@ -39,6 +39,7 @@ export default function MeetingRoomPage() {
 
   const { connect, disconnect, isConnected, sendAudio, sendAgentModeCommand } = useWebSocket(meetingId, {
     onAgentModeStatus: handleAgentModeStatus,
+    mode: initialMode,
   });
   const { start, stop, pause, resume, isRecording } = useAudioCapture(sendAudio);
 
