@@ -37,9 +37,10 @@
    - `scripts/run_smoke.sh` 실행 → `.last_test_run` 갱신
 2. 커밋은 에이전트가 직접 수행한다. (사람은 수행하지 않음)
 3. 커밋 직후, `review-agent-safety` 기준을 자동 검사한다.  
-   - `scripts/review_agent_safety_check.py` 실행
+   - `scripts/review_agent_safety_check.py` 실행 (score 출력 확인)
 
 - 훅 템플릿 설치: `scripts/install_hooks.sh` 실행
+- (선택) DSPy 검증 활성화: `DSPY_VALIDATE=1` 환경 변수 설정 후 실행
 
 이 워크플로우는 git hook으로 강제된다:
 - `pre-commit`: 최근 테스트 스탬프 확인

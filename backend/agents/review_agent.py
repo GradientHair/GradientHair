@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from models.meeting import MeetingState, Participant, TranscriptEntry, Intervention
 from services.principles_service import PrinciplesService
+from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
 
 
 @dataclass
@@ -92,6 +93,15 @@ class MeetingEvaluationAgent:
     def __init__(self):
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
         self.max_retries = 2
+        self.runner = None
+        if self.client:
+            self.runner = LLMStructuredOutputRunner(
+                client=self.client,
+                model="gpt-4o-mini",
+                schema=EvaluationResponse,
+                max_retries=self.max_retries,
+                custom_validator=self._validate_evaluation_response,
+            )
 
     async def analyze(
         self,
@@ -106,11 +116,11 @@ class MeetingEvaluationAgent:
 
         try:
             prompt = self._build_prompt(state, principles)
-            response_text = self._call_model_with_retry(prompt)
-            if response_text is None:
+            if self.runner is None:
                 return self._fallback_evaluation(state, principles)
-
-            parsed = EvaluationResponse.model_validate_json(response_text)
+            parsed = self.runner.run(prompt)
+            if parsed is None:
+                return self._fallback_evaluation(state, principles)
             return self._parse_llm_response(parsed, principles, state)
         except Exception:
             return self._fallback_evaluation(state, principles)
@@ -300,25 +310,10 @@ JSON으로 응답하세요:
         chunk_summary = f"chunks:{len(chunks)}"
         return f"speakers({speaker_summary}), keywords({keyword_summary}), {chunk_summary}"
 
-    def _call_model_with_retry(self, prompt: str) -> Optional[str]:
-        last_error = None
-        for _ in range(self.max_retries + 1):
-            messages = [{"role": "user", "content": prompt}]
-            if last_error:
-                messages.append({
-                    "role": "user",
-                    "content": f"이전 응답 처리 중 오류가 발생했습니다: {last_error}. 올바른 JSON만 다시 출력하세요.",
-                })
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                )
-                return response.choices[0].message.content
-            except Exception as exc:
-                last_error = str(exc)
-        return None
+    def _validate_evaluation_response(self, parsed: EvaluationResponse) -> ValidationResult:
+        if parsed.overall_score < 0 or parsed.overall_score > 100:
+            return ValidationResult(ok=False, error="overall_score out of range")
+        return ValidationResult(ok=True, value=parsed)
 
 
 class ParticipantFeedbackAgent:
@@ -327,6 +322,15 @@ class ParticipantFeedbackAgent:
     def __init__(self):
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
         self.max_retries = 2
+        self.runner = None
+        if self.client:
+            self.runner = LLMStructuredOutputRunner(
+                client=self.client,
+                model="gpt-4o-mini",
+                schema=ParticipantFeedbackResponse,
+                max_retries=self.max_retries,
+                custom_validator=self._validate_feedback_response,
+            )
 
     async def analyze(
         self,
@@ -339,10 +343,11 @@ class ParticipantFeedbackAgent:
 
         try:
             prompt = self._build_prompt(state, participant, transcript)
-            response_text = self._call_model_with_retry(prompt)
-            if response_text is None:
+            if self.runner is None:
                 return self._fallback_feedback(state, participant)
-            payload = ParticipantFeedbackResponse.model_validate_json(response_text)
+            payload = self.runner.run(prompt)
+            if payload is None:
+                return self._fallback_feedback(state, participant)
             return ParticipantFeedback(
                 participant_id=participant.id,
                 participant_name=participant.name,
@@ -411,25 +416,10 @@ JSON으로 응답하세요:
             private_notes=private_notes,
         )
 
-    def _call_model_with_retry(self, prompt: str) -> Optional[str]:
-        last_error = None
-        for _ in range(self.max_retries + 1):
-            messages = [{"role": "user", "content": prompt}]
-            if last_error:
-                messages.append({
-                    "role": "user",
-                    "content": f"이전 응답 처리 중 오류가 발생했습니다: {last_error}. 올바른 JSON만 다시 출력하세요.",
-                })
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                )
-                return response.choices[0].message.content
-            except Exception as exc:
-                last_error = str(exc)
-        return None
+    def _validate_feedback_response(self, parsed: ParticipantFeedbackResponse) -> ValidationResult:
+        if not parsed.positives and not parsed.improvements:
+            return ValidationResult(ok=False, error="empty feedback")
+        return ValidationResult(ok=True, value=parsed)
 
 
 class ReviewOrchestratorAgent:

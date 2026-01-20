@@ -36,6 +36,7 @@ def check_repo() -> dict:
     topic_agent = root / "backend/agents/topic_agent.py"
     server = root / "backend/server.py"
     smoke_script = root / "scripts/run_smoke.sh"
+    llm_validation = root / "backend/services/llm_validation.py"
 
     checks.append(("multi_agent_orchestrator", safety_orchestrator.exists()))
     checks.append(("review_agent", review_agent.exists()))
@@ -48,6 +49,8 @@ def check_repo() -> dict:
     checks.append(("schema_validation_principle", file_contains(principle_agent, "pydantic")))
     checks.append(("schema_validation_topic", file_contains(topic_agent, "pydantic")))
     checks.append(("schema_validation_review", file_contains(review_agent, "pydantic")))
+    checks.append(("validation_pipeline", llm_validation.exists() and file_contains(llm_validation, "LLMStructuredOutputRunner")))
+    checks.append(("dspy_pipeline", file_contains(llm_validation, "DSPyValidator")))
     checks.append(("evidence_citations", file_contains(review_agent, "evidence")))
     checks.append(("chunking_indexing", file_contains(review_agent, "_build_transcript_index")))
     checks.append(("openai_safety_check", file_contains(safety_orchestrator, "SafetyCheckAgent")))
@@ -70,6 +73,8 @@ def score_repo(checks: dict) -> dict:
         ("supervisor_worker_event", 15, lookup.get("multi_agent_orchestrator") and lookup.get("event_driven_runtime") and lookup.get("orchestrator_wired")),
         ("crash_and_recovery", 10, lookup.get("crash_detection_agent") and lookup.get("error_recovery_agent")),
         ("schema_validation", 10, lookup.get("schema_validation_principle") and lookup.get("schema_validation_topic") and lookup.get("schema_validation_review")),
+        ("validation_pipeline", 10, lookup.get("validation_pipeline")),
+        ("dspy_pipeline", 5, lookup.get("dspy_pipeline")),
         ("openai_safety_check", 10, lookup.get("openai_safety_check")),
         ("evidence_citations", 10, lookup.get("evidence_citations")),
         ("chunking_indexing", 5, lookup.get("chunking_indexing")),
