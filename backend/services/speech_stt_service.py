@@ -35,6 +35,7 @@ class SpeechSTTService:
         self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
         self.model = os.getenv("AUDIO_TRANSCRIBE_MODEL", "gpt-4o-transcribe-diarize")
         self.response_format = os.getenv("AUDIO_TRANSCRIBE_FORMAT", "diarized_json")
+        self.chunking_strategy = os.getenv("AUDIO_TRANSCRIBE_CHUNKING", "auto")
 
         self._buffer = bytearray()
         self._lock = asyncio.Lock()
@@ -100,6 +101,7 @@ class SpeechSTTService:
                 file=audio_file,
                 response_format=self.response_format,
                 language=self.language,
+                chunking_strategy=self.chunking_strategy,
             )
 
             segments = self._parse_diarized_response(transcription)
