@@ -1,85 +1,125 @@
 # GradientHair
 
-A skills repository for Multi-Agent development, providing guidance for Codex CLI multi-agent workflows.
+> Multi-agent meeting moderator demo with real-time intervention and post-meeting feedback
+
+English | [한국어](README.md)
+
+## Demo
+
+- Demo URL: (Coming soon)
+- Demo Video: (Coming soon)
+
+### Running the Demo (Docker)
+
+```bash
+# 1. Create backend/.env and add API key
+echo "OPENAI_API_KEY=<YOUR_API_KEY>" > backend/.env
+
+# 2. Run docker compose
+docker compose --env-file backend/.env -f docker/docker-compose.yml up -d --build
+
+# 3. Clean up after demo
+docker compose --env-file backend/.env -f docker/docker-compose.yml down
+```
+
+### Demo Flow
+
+1. Access `http://localhost:3000`
+2. Enter meeting title/participants/agenda
+3. **Start Meeting** → Navigate to `/meeting/{id}`
+4. Check real-time captions/interventions in **Agent Mode**
+5. **End Meeting** → Navigate to `/review/{id}` and verify saved files
 
 ## Problem Statement
 
-In enterprise settings, multi-agent work often incurs recurring operational cost and quality variance. This repo
-provides standardized skills to safely decompose and parallelize complex work, improving developer productivity and
-operational consistency.
+- Employees spend avg. 15 hours/week in meetings, **over 50% rated unproductive**
+- **37% of meeting time** wasted on off-topic discussions
+- **70% of participants** experience unequal speaking opportunities
+- **Over 30% of Action Items** not clearly documented and lost
 
-Quantitative KPI examples (target metrics that may vary by organization):
-- 30-50% reduction in lead time for decomposition and handoffs
-- 25-40% reduction in review/validation cycle time
-- 30-60% reduction in average LLM cost via model routing optimization
+## Solution
 
-## Installation
+- Collect utterances via Realtime STT and update Meeting State
+- Multi-agent performs real-time intervention
+- After meeting, Review Agent saves summary/action items/feedback as Markdown
+- LLM output validation: Pydantic schema + error feedback retry + optional DSPy verification
+- Cost/latency optimization: Model router, deferred diarization post-processing
 
-### 1. Clone the repository
+## Requirements Checklist
 
-```bash
-git clone https://github.com/GradientHair/GradientHair ~/.codex/skills/GradientHair
-# or
-#
-git clone https://github.com/GradientHair/GradientHair ~/.claude/skills/GradientHair
+- [x] OpenAI API usage
+- [x] Multi-agent implementation
+- [x] Working demo
+- [x] LLM structured output validation pipeline
+- [x] Practical cost/latency optimization
+
+## Architecture
+
+### Multi-Agent Patterns
+
+| Pattern | Application |
+| ------- | ----------- |
+| **Blackboard** | Meeting State Store as shared memory, all Agents read/write state |
+| **Moderator + Worker** | Triage Agent classifies intent and delegates to specialist Agents (Topic/Principle/Participation) |
+| **Verifier + Executor** | Validate LLM output with Pydantic before execution, retry loop on failure |
+
+### System Structure
+
+```
+Meeting (Live):
+  Audio -> Realtime STT -> Meeting State Store (Blackboard)
+                      |
+                      v
+               Triage Agent (Moderator - Intent classification / Handoff)
+              /       |        \
+         Topic    Principle  Participation    (Workers)
+         Agent       Agent       Agent
+              \       |        /
+                Intervention Merge
+                       |
+                  Alert + Toast
+
+Post-meeting (Async):
+  Review Agent -> summary/action-items/feedback.md
+  Diarize Job  -> transcript_diarized.md/.json
 ```
 
-### 2. Use in Codex/Claude Code
+## Tech Stack
 
-After cloning, the skills are discovered automatically.
+- **Backend**: Python 3.12, FastAPI
+- **AI/Agents**: OpenAI SDK, OpenAI Agents SDK
+- **STT**: OpenAI Realtime API
+- **Frontend**: Next.js, React, shadcn/ui
 
-## Included Skills
+## Installation & Running
 
-### multi-agent-guide
+```bash
+# Set up environment
+make env-backend   # Creates backend/.env, then add OPENAI_API_KEY
+make env-frontend  # Creates frontend/.env.local
 
-Guide for implementing Multi-Agent workflows in Codex CLI. Covers decomposition and parallelization via the
-Orchestrator-Worker pattern.
+# Install dependencies
+make setup-backend
+make setup-frontend
 
-**File layout:**
-- `SKILL.md` / `skill.md` - Orchestrator-Worker overview and Collab Tools quick reference
-- `references/best-practices.md` - Detailed best practices
-- `references/collab-tools.md` - spawn_agent, send_input, wait, close_agent API reference
-- `references/patterns.md` - Six usage patterns and examples
+# Run
+make run-local-dev
+```
 
-**Highlights:**
-- Orchestrator-Worker pattern architecture
-- Collab Tools (spawn_agent, send_input, wait, close_agent)
-- Parallelization, code review, TDD, and large refactor patterns
-- Anti-patterns and usage guidance
+## Future Plans
 
-### planning-with-files
-
-A file-driven planning workflow for complex tasks. Provides task_plan.md, findings.md, progress.md patterns and
-session recovery scripts.
-
-**Highlights:**
-- planning-with-files patterns and templates
-- session recovery and validation scripts
-- examples and reference documents
-
-### openai-agents-python
-
-Examples and guides for OpenAI Agents in Python.
-
-**Highlights:**
-- examples and usage guides
-- skill documentation
+- Realtime STT pipeline stabilization and latency optimization
+- Model/policy evaluation (Eval) automation
 
 ## Team
 
-- Donghyun Kim: STT development
-- Huncheol Shin: Team lead/planning, Agent development
-- Jongseob Jeon: App development
-- Jaeyeon Kim: Agent development
+| Name | Role |
+| ---- | ---- |
+| Huncheol Shin | Team Lead/Planning, Agent Dev |
+| Donghyun Kim | STT Development |
+| Jongseob Jeon | App Development |
+| Jaeyeon Kim | Agent Development |
 
-## AGENTS.md
+## Documentation
 
-Project-level agent configuration file with guidance for complex multi-agent workflows.
-
-## References
-
-- [Codex CLI GitHub](https://github.com/openai/codex)
-
-## Korean README
-
-- `README.ko.md`
+- [Developer Guide](docs/DEVELOPER-GUIDE.en.md)
