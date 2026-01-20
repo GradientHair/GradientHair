@@ -33,13 +33,14 @@ type Principle = {
   source: "preset" | "custom";
 };
 
-const defaultPrinciples: Principle[] = isEnglish
-  ? [
-      {
-        id: "agile",
-        name: "Agile principles",
-        source: "preset",
-        content: `# Agile Meeting Principles
+const getDefaultPrinciples = (): Principle[] =>
+  isEnglish()
+    ? [
+        {
+          id: "agile",
+          name: "Agile principles",
+          source: "preset",
+          content: `# Agile Meeting Principles
 
 1. **Shared decisions**
    Respect every participant's input equally.
@@ -55,12 +56,12 @@ const defaultPrinciples: Principle[] = isEnglish
 
 5. **Transparency**
    Share information openly.`,
-      },
-      {
-        id: "aws-leadership",
-        name: "AWS Leadership",
-        source: "preset",
-        content: `# AWS Leadership Principles for Meetings
+        },
+        {
+          id: "aws-leadership",
+          name: "AWS Leadership",
+          source: "preset",
+          content: `# AWS Leadership Principles for Meetings
 
 1. **Customer Obsession**
    Discuss from the customer point of view.
@@ -79,14 +80,14 @@ const defaultPrinciples: Principle[] = isEnglish
 
 6. **Bias for Action**
    Decide and act quickly.`,
-      },
-    ]
-  : [
-      {
-        id: "agile",
-        name: "Agile 원칙",
-        source: "preset",
-        content: `# Agile Meeting Principles
+        },
+      ]
+    : [
+        {
+          id: "agile",
+          name: "Agile 원칙",
+          source: "preset",
+          content: `# Agile Meeting Principles
 
 1. **수평적 의사결정**
    모든 참석자의 의견을 동등하게 존중합니다.
@@ -102,12 +103,12 @@ const defaultPrinciples: Principle[] = isEnglish
 
 5. **투명성**
    정보 공유에 숨김이 없습니다.`,
-      },
-      {
-        id: "aws-leadership",
-        name: "AWS Leadership",
-        source: "preset",
-        content: `# AWS Leadership Principles for Meetings
+        },
+        {
+          id: "aws-leadership",
+          name: "AWS Leadership",
+          source: "preset",
+          content: `# AWS Leadership Principles for Meetings
 
 1. **Customer Obsession**
    고객 관점에서 논의합니다.
@@ -126,13 +127,13 @@ const defaultPrinciples: Principle[] = isEnglish
 
 6. **Bias for Action**
    빠른 결정, 실행 우선으로 진행합니다.`,
-      },
-    ];
+        },
+      ];
 
 const presetIds = new Set(["agile", "aws-leadership"]);
 
 const buildTemplate = (name: string) =>
-  isEnglish
+  isEnglish()
     ? `# ${name}
 
 1. **Core principles**
@@ -156,8 +157,8 @@ const buildTemplate = (name: string) =>
 
 export default function PrinciplesPage() {
   const apiBase = getApiBase();
-  const [principles, setPrinciples] = useState<Principle[]>(defaultPrinciples);
-  const [savedPrinciples, setSavedPrinciples] = useState<Principle[]>(defaultPrinciples);
+  const [principles, setPrinciples] = useState<Principle[]>(getDefaultPrinciples());
+  const [savedPrinciples, setSavedPrinciples] = useState<Principle[]>(getDefaultPrinciples());
   const [activeTab, setActiveTab] = useState(principles[0]?.id ?? "");
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -187,16 +188,17 @@ export default function PrinciplesPage() {
           })
         );
         if (isMounted) {
-          const next = mapped.length > 0 ? mapped : defaultPrinciples;
+          const next = mapped.length > 0 ? mapped : getDefaultPrinciples();
           setPrinciples(next);
           setSavedPrinciples(next);
           setActiveTab(next[0]?.id ?? "");
         }
       } catch {
         if (isMounted) {
-          setPrinciples(defaultPrinciples);
-          setSavedPrinciples(defaultPrinciples);
-          setActiveTab(defaultPrinciples[0]?.id ?? "");
+          const fallback = getDefaultPrinciples();
+          setPrinciples(fallback);
+          setSavedPrinciples(fallback);
+          setActiveTab(fallback[0]?.id ?? "");
         }
       } finally {
         if (isMounted) {

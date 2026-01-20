@@ -9,11 +9,30 @@ type Dictionaries = {
   ko: Dictionary;
 };
 
-const rawLocale = process.env.NEXT_PUBLIC_LOCALE ?? "ko";
-export const locale: Locale = rawLocale.toLowerCase().startsWith("en") ? "en" : "ko";
-export const htmlLang = locale === "en" ? "en" : "ko";
-export const dateLocale = locale === "en" ? "en-US" : "ko-KR";
-export const isEnglish = locale === "en";
+const resolveEnvLocale = (): Locale => {
+  const rawLocale = process.env.NEXT_PUBLIC_LOCALE ?? "ko";
+  return rawLocale.toLowerCase().startsWith("en") ? "en" : "ko";
+};
+
+export const getLocale = (): Locale => {
+  if (typeof window !== "undefined") {
+    const stored = window.localStorage.getItem("locale");
+    if (stored === "en" || stored === "ko") return stored;
+  }
+  return resolveEnvLocale();
+};
+
+export const setLocale = (next: Locale) => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem("locale", next);
+  }
+};
+
+export const isEnglish = () => getLocale() === "en";
+
+export const getHtmlLang = () => (getLocale() === "en" ? "en" : "ko");
+
+export const getDateLocale = () => (getLocale() === "en" ? "en-US" : "ko-KR");
 
 const dictionaries: Dictionaries = {
   en: {
@@ -345,6 +364,7 @@ const dictionaries: Dictionaries = {
 };
 
 export const t = (key: string, params?: Params): string => {
+  const locale = getLocale();
   const template = dictionaries[locale][key] ?? dictionaries.en[key] ?? key;
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (_match, token) => {
@@ -357,7 +377,7 @@ export const formatDateTime = (value?: string | null, options?: Intl.DateTimeFor
   if (!value) return t("home.noDate");
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(dateLocale, options ?? {
+  return parsed.toLocaleString(getDateLocale(), options ?? {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -369,7 +389,7 @@ export const formatDateTime = (value?: string | null, options?: Intl.DateTimeFor
 export const formatTime = (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleTimeString(dateLocale, options ?? {
+  return parsed.toLocaleTimeString(getDateLocale(), options ?? {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
