@@ -38,7 +38,8 @@ from services.principles_service import (
     PrincipleUpdate,
     PrincipleCreateResponse,
 )
-from agents.triage_agent import TriageAgent
+from agents.review_agent import ReviewOrchestratorAgent
+from agents.safety_orchestrator import SafetyOrchestrator
 
 app = FastAPI(title="MeetingMod API")
 
@@ -314,6 +315,14 @@ async def end_meeting(meeting_id: str):
     storage = StorageService()
     await storage.save_transcript(state)
     await storage.save_interventions(state)
+    try:
+        review_agent = ReviewOrchestratorAgent()
+        review = await review_agent.review(state)
+        await storage.save_summary(state, review.summary_markdown)
+        await storage.save_action_items(state, review.action_items_markdown)
+        await storage.save_individual_feedback(state, review.feedback_by_participant)
+    except Exception as e:
+        logger.error(f"Review generation failed: {e}")
 
     return {"id": meeting_id, "status": "completed"}
 
@@ -366,11 +375,22 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
     await storage.save_preparation(state)
     await storage.save_transcript(state)
     await storage.save_interventions(state)
+    try:
+        review_agent = ReviewOrchestratorAgent()
+        review = await review_agent.review(state)
+        await storage.save_summary(state, review.summary_markdown)
+        await storage.save_action_items(state, review.action_items_markdown)
+        await storage.save_individual_feedback(state, review.feedback_by_participant)
+    except Exception as e:
+        logger.error(f"Review generation failed: {e}")
 
     return {"id": meeting_id, "status": "saved", "files": [
         f"meetings/{meeting_id}/preparation.md",
         f"meetings/{meeting_id}/transcript.md",
         f"meetings/{meeting_id}/interventions.md",
+        f"meetings/{meeting_id}/summary.md",
+        f"meetings/{meeting_id}/action-items.md",
+        f"meetings/{meeting_id}/feedback/",
     ]}
 
 
@@ -527,7 +547,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     stt_service = RealtimeSTTService()
     speaker_service = SpeakerService()
     speaker_service.set_participants(state.participants)
-    triage_agent = TriageAgent()
+    safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
 
     async def on_transcript(text: str):
@@ -581,8 +601,14 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             )
 
     async def on_speech_end():
-        # 멀티에이전트 병렬 분석 (TriageAgent)
-        intervention = await triage_agent.analyze(state, state.transcript[-10:])
+        # 멀티에이전트 병렬 분석 (SafetyOrchestrator)
+        result = await safety_orchestrator.analyze(state, state.transcript[-10:])
+        intervention = result.intervention
+        if result.errors:
+            logger.warning(f"[{meeting_id}] Agent errors: {[e.error for e in result.errors]}")
+        if result.warnings:
+            logger.warning(f"[{meeting_id}] Safety warnings: {result.warnings}")
+
         if intervention:
             state.interventions.append(intervention)
             if intervention.parking_lot_item:
