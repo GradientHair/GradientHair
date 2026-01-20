@@ -8,6 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import monotonic
 
 from dotenv import load_dotenv
 
@@ -62,20 +63,24 @@ def main() -> None:
         agile_violation_rate=args.agile_violation,
     )
 
-    turns = agent.generate_dialogue(
-        state,
-        recent_transcript=state.transcript,
-        turns=args.turns,
-        seed=args.seed,
-        stream=not args.no_stream,
-    )
-
     rng = random.Random(args.seed)
     timestamp = datetime.now()
-    for turn in turns:
+    for idx in range(args.turns):
+        seed = args.seed + idx if args.seed is not None else None
+        start = monotonic()
+        turns = agent.generate_dialogue(
+            state,
+            recent_transcript=state.transcript,
+            turns=1,
+            seed=seed,
+            stream=not args.no_stream,
+        )
+        latency = int((monotonic() - start) * 1000)
+        if not turns:
+            continue
+        turn = turns[0]
         timestamp += timedelta(seconds=rng.randint(1, 4))
         conf = rng.uniform(0.7, 0.95)
-        latency = rng.randint(900, 2600)
         flags = []
         if turn.is_off_topic:
             flags.append("off_topic")
@@ -86,6 +91,14 @@ def main() -> None:
             f"[{timestamp:%Y-%m-%d %H:%M:%S}] "
             f"{turn.speaker} (conf={conf:.2f}, latency={latency}ms): "
             f"{turn.text}{suffix}"
+        )
+        state.transcript.append(
+            TranscriptEntry(
+                id=f"gen_{uuid.uuid4().hex[:8]}",
+                timestamp=timestamp.isoformat(),
+                speaker=turn.speaker,
+                text=turn.text,
+            )
         )
 
 
