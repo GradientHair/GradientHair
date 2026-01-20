@@ -92,6 +92,7 @@ class RealtimeSTTService:
         self._last_speech_end_at: float | None = None
         self._response_transcripts: dict[str, str] = {}
         self._partial_transcripts: dict[str, str] = {}
+        self._last_delta_log_at: float = 0.0
         self._callback_semaphore = asyncio.Semaphore(
             int(os.getenv("REALTIME_CALLBACK_CONCURRENCY", "4"))
         )
@@ -307,9 +308,14 @@ class RealtimeSTTService:
         """Process a message received from the API."""
         event_type = data.get("type", "")
 
-        # Log ALL events for debugging
+        # Avoid heavy logging on high-frequency delta events
         if "error" in event_type or "failed" in event_type:
             logger.error(f"OpenAI Event: {event_type} | FULL Data: {json.dumps(data, ensure_ascii=False)}")
+        elif event_type.endswith(".delta"):
+            now = time.perf_counter()
+            if now - self._last_delta_log_at > 2.0:
+                logger.debug(f"OpenAI Event: {event_type} | Data: {str(data)[:200]}")
+                self._last_delta_log_at = now
         else:
             logger.info(f"OpenAI Event: {event_type} | Data: {str(data)[:200]}")
 
