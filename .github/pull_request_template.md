@@ -6,7 +6,7 @@
 
 ## Testing
 - [ ] `scripts/run_smoke.sh`
-- [ ] `python3 scripts/review_agent_safety_check.py`
+- [ ] `python3 scripts/review_agent_safety_check.py` (expect score output)
 - [ ] Playwright UI demo flow (manual)
   - [ ] `frontend/.env.local` 설정
     - `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
