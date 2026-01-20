@@ -9,7 +9,7 @@
 
 ### 데모 환경
 - **실행 환경**: localhost
-- **오디오 입력**: 맥북 마이크 → Whisper STT
+- **오디오 입력**: 맥북 마이크 → OpenAI Realtime API (Realtime STT)
 - **개입 출력**: 경고음 + Toast 메시지
 
 ### 데모 시간

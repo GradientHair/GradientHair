@@ -392,7 +392,7 @@ meetings/
 ### Phase 2: 핵심 파이프라인 (3시간)
 1. 마이크 오디오 캡처 (Web Audio API)
 2. WebSocket 연결
-3. Whisper STT 연동
+3. OpenAI Realtime API 연동
 4. AI 화자 분리 (참석자 목록 기반)
 5. Moderator Agent 기본 로직
    - 주제 이탈 감지

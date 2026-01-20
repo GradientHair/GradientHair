@@ -18,11 +18,10 @@
 | Feature | Included | Notes |
 |---------|----------|-------|
 | 회의 준비 자료 입력 | Yes | 참석자, 아젠다, 회의 원칙 |
-| 실시간 음성 인식 | Yes | Whisper STT, 실제 마이크 입력 |
+| 실시간 음성 인식 | Yes | Realtime STT, 실제 마이크 입력 |
 | 화자 자동 분리 | Yes | 참석자 목록 기반 AI 분리 |
 | Agent 실시간 개입 | Yes | 경고음 + 화면 Toast |
 | 회의록 저장 | Yes | 회의별 디렉토리 + .md 파일 |
-| Action Item 추출 | Yes | Markdown 파일로 저장 |
 | 이메일 발송 | No | 해커톤 MVP 범위 외 |
 
 ### Technical Decisions
@@ -127,4 +126,4 @@ meetings/
 
 ---
 
-*Last updated: 2026-01-18*
+*Last updated: 2026-01-20*
