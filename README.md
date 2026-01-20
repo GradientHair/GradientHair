@@ -1,169 +1,101 @@
 # GradientHair
 
-> 실시간 회의 개입과 회의 후 피드백을 제공하는 멀티에이전트 회의 운영 데모
+Multi-Agent 개발을 위한 Skills 레포지토리입니다. Codex CLI의 multi-agent workflow 활용 가이드를 제공합니다.
+A skills repository for Multi-Agent development, providing guidance for Codex CLI multi-agent workflows.
 
-OpenAI Coxwave Hackathon 요구사항에 맞춰, 회의 도중의 **주제 이탈/원칙 위반/참여 불균형**을
-실시간으로 감지하고 개입하는 AI Meeting Moderator를 구현합니다.
+## 문제 정의 | Problem Statement
 
-## 데모
+기업 환경에서 Multi-Agent 작업은 반복적인 운영 비용과 품질 편차를 동반합니다. 이 레포는 복잡한 작업을
+안전하게 분해하고 병렬로 수행할 수 있는 표준화된 스킬을 제공해, 개발 생산성과 운영 일관성을 높이는 것을
+목표로 합니다.
+In enterprise settings, multi-agent work often incurs recurring operational cost and quality variance. This repo
+provides standardized skills to safely decompose and parallelize complex work, improving developer productivity and
+operational consistency.
 
-- 데모 URL: (추가 예정)
-- 데모 영상: (추가 예정)
+정량 KPI 예시(조직 상황에 따라 달라질 수 있는 목표 지표):
+Quantitative KPI examples (target metrics that may vary by organization):
+- 작업 분해/핸드오프에 소요되는 리드타임 30~50% 단축 목표
+- 리뷰/검증 사이클 소요 시간 25~40% 절감 목표
+- 모델 라우팅 최적화로 평균 LLM 비용 30~60% 절감 목표
 
-### 데모 실행
-1. `backend/.env` 파일 생성 및 API key 기입
-```
-OPENAI_API_KEY=<YOUR_API_KEY>
-```
-2. docker compose up 실행
-```bash
-docker compose --env-file backend/.env -f docker/docker-compose.yml up -d --build
-```
-3. 데모 이후 자원 정리
-```bash
-docker compose --env-file backend/.env -f docker/docker-compose.yml down
-```
+## 설치 방법 | Installation
 
-### 데모 플로우 (로컬)
-1. `http://localhost:3000` 접속
-
-2. 회의 제목/참석자/아젠다 입력
-     
-     <img src="./assets/google_cal_invi.png" alt="예시" width="300"/>
-     
-     ```plaintext
-     챗봇 화면 기획 논의
-     1월 20일 (화요일)⋅AM 10:00~ 10:30
-     참석자 2명
-     초대 수락 1명, 회신 대기 중 1명
-     Jongseob Jeon (Aiden)
-     주최자
-     hunhoon21@gmail.com
-     안녕하세요 훈철님
-     이전에 comm 한 것 처럼 개발 환경 초안에 대해서 논의하는 미팅입니다.
-     Jongseob Jeon
-     한가함
-     ```
-
-3. **회의 시작** → `/meeting/{id}` 진입
-4. **에이전트 모드**에서 실시간 자막/개입 확인
-5. **회의 종료** → `/review/{id}` 이동 및 파일 저장 확인
-
-## 문제 정의
-
-회의 중 주제 이탈, 원칙 위반, 참여 불균형을 **실시간으로 감지·개입**하고,
-회의 종료 후에는 **요약/액션 아이템/개인 피드백**을 자동 생성해야 한다.
-
-## 솔루션
-
-Realtime STT로 발화를 수집해 Meeting State를 갱신하고, 멀티에이전트가 실시간 개입을 수행한다.
-회의 종료 후에는 Review Agent가 요약/액션 아이템/피드백을 생성해 Markdown으로 저장한다.
-
-LLM 출력 정합성은 3단계로 보강한다(함수 호출/structured output 스타일 JSON).
-1) Pydantic 스키마 파싱 + structured output(JSON) 강제
-2) 실패 시 에러 메시지를 포함한 재시도 루프 (error feedback loop)
-3) 선택적 DSPy 검증 단계(DSPY_VALIDATE=1)로 추가 안전장치
-(관련 문서화: [PR #5](https://github.com/GradientHair/GradientHair/pull/5))
-
-실용주의 관점에서 비용/지연을 줄이기 위해 모델 라우터를 두고,
-실시간 STT는 Realtime API로 처리하되 화자 분리(diarization)는 회의 종료 후
-배치(post-process)로 분리하여 비용과 지연을 분산한다.
-
-## 조건 충족 여부
-
-- [x] OpenAI API 사용
-- [x] 멀티에이전트 구현
-- [x] 실행 가능한 데모
-- [x] LLM structured output 검증 파이프라인(스키마 파싱 → 에러 피드백 재시도 → DSPy 옵션)
-- [x] 실용적 비용/지연 최적화(모델 라우팅, diarize 후처리 분리)
-
-## 핵심 기능
-
-- 실시간 음성 인식 (OpenAI Realtime API)
-- 회의 종료 후 diarize 기반 화자 분리(배치 처리)
-- 주제 이탈/원칙 위반/참여 불균형 감지 및 개입
-- 회의 요약/액션 아이템/피드백 Markdown 저장
-- LLM structured output 검증 파이프라인(Pydantic + retry + DSPy 옵션)
-- Model Router 기반 비용/속도 최적화(작은 작업은 빠른 모델, 복잡한 작업은 고성능 모델)
-
-## 아키텍처
-
-```
-Meeting (Live):
-  Audio -> Realtime STT -> Meeting State Store
-                      |
-                      v
-               Triage Agent
-         (Intent 분류 / Handoff)
-          /       |        \
-     Topic     Principle  Participation
-     Agent        Agent       Agent
-          \       |        /
-            Intervention Merge
-                   |
-              Alert + Toast
-
-  LLM Calls:
-    Model Router -> Structured Output Runner
-                   (Pydantic parse + error feedback retry + optional DSPy)
-
-Post-meeting (Async):
-  Review Agent -> summary/action-items/feedback.md
-  Diarize Job  -> transcript_diarized.md/.json
-```
-
-## 저장 구조
-
-```
-meetings/
-└── {meeting-id}/
-    ├── preparation.md
-    ├── principles.md
-    ├── transcript.md
-    ├── interventions.md
-    ├── summary.md
-    └── action-items.md
-```
-
-## 기술 스택
-
-- Backend: Python 3.12, FastAPI
-- AI/Agents: OpenAI SDK, OpenAI Agents SDK
-- STT: OpenAI Realtime API
-- Frontend: Next.js + React + shadcn/ui
-
-## 설치 및 실행
+### 1. 레포지토리 클론 | Clone the repository
 
 ```bash
-# 환경 설정
-# (backend) OPENAI_API_KEY 설정 후 실행
-make env-backend
-make env-frontend
-
-# 의존성 설치
-make setup-backend
-make setup-frontend
-
-# 실행
-make run-local-dev
+git clone https://github.com/GradientHair/GradientHair ~/.codex/skills/GradientHair
+# 또는
+# or
+#
+git clone https://github.com/GradientHair/GradientHair ~/.claude/skills/GradientHair
 ```
 
-## 제출 가이드 (해커톤 기준)
+### 2. Codex/Claude Code에서 사용 | Use in Codex/Claude Code
 
-- GitHub Public 레포지토리
-- 레포 이름 = 팀 이름
-- README에 데모 링크/영상 포함
-- 마감 시점의 `main` 브랜치 기준으로 심사
+클론 후 자동으로 skill이 인식됩니다.
+After cloning, the skills are discovered automatically.
 
-## 향후 계획 (Optional)
+## 포함된 Skills | Included Skills
 
-- Realtime STT 파이프라인 안정화 및 지연 최적화
-- 모델/정책별 평가(Eval) 자동화
+### multi-agent-guide
 
-## 팀원
+Codex CLI의 Multi-Agent Workflow 구현 가이드입니다. Orchestrator-Worker 패턴을 사용한 복잡한 작업 분해 및
+병렬 처리를 다룹니다.
+Guide for implementing Multi-Agent workflows in Codex CLI. Covers decomposition and parallelization via the
+Orchestrator-Worker pattern.
 
-| 이름 | 역할 |
-| ---- | ---- |
-|      |      |
-|      |      |
-|      |      |
+**파일 구조 | File layout:**
+- `SKILL.md` / `skill.md` - Orchestrator-Worker 패턴 개요, Collab Tools 빠른 참조
+- `references/best-practices.md` - 상세 Best Practices
+- `references/collab-tools.md` - spawn_agent, send_input, wait, close_agent API 레퍼런스
+- `references/patterns.md` - 6가지 활용 패턴 및 예시
+
+**주요 내용 | Highlights:**
+- Orchestrator-Worker 패턴 아키텍처
+- Collab Tools (spawn_agent, send_input, wait, close_agent)
+- 병렬 처리, 코드 리뷰, TDD, 대규모 리팩토링 패턴
+- Anti-patterns 및 사용 가이드
+
+### planning-with-files
+
+복잡한 작업에서 파일 기반 플래닝을 수행하는 워크플로우입니다. task_plan.md, findings.md, progress.md 패턴과
+세션 복구 스크립트를 제공합니다.
+A file-driven planning workflow for complex tasks. Provides task_plan.md, findings.md, progress.md patterns and
+session recovery scripts.
+
+**주요 내용 | Highlights:**
+- planning-with-files 패턴 및 템플릿
+- 세션 복구/검증 스크립트
+- 예시와 레퍼런스 문서
+
+### openai-agents-python
+
+OpenAI Agents Python 사용 예제와 스킬 가이드입니다.
+Examples and guides for OpenAI Agents in Python.
+
+**주요 내용 | Highlights:**
+- 예제 및 활용 가이드
+- 스킬 문서
+
+## 팀 | Team
+
+- 김동현: STT 개발
+- 신훈철: 팀장/기획, Agent 개발
+- 전종섭: App 개발
+- 김재연: Agent 개발
+
+## Team (English)
+
+- Donghyun Kim: STT development
+- Huncheol Shin: Team lead/planning, Agent development
+- Jongseob Jeon: App development
+- Jaeyeon Kim: Agent development
+
+## AGENTS.md
+
+프로젝트 수준의 에이전트 설정 파일입니다. 복잡한 작업에 대한 multi-agent workflow 가이드를 제공합니다.
+Project-level agent configuration file with guidance for complex multi-agent workflows.
+
+## 참고 자료 | References
+
+- [Codex CLI GitHub](https://github.com/openai/codex)
