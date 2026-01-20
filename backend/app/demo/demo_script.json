@@ -1,0 +1,89 @@
+{
+  "scripts": [
+    {
+      "id": "meeting-operator-demo",
+      "title": "Weekly Product Sync",
+      "description": "Core demo script aligned to the MeetingMod scenario with attendee correction, topic drift, participation balance, and recap.",
+      "agenda": [
+        "Review last sprint outcomes",
+        "Plan next sprint priorities",
+        "Risks & open questions"
+      ],
+      "participants": [
+        {"name": "Alex", "role": "PM"},
+        {"name": "Bianca", "role": "Frontend"},
+        {"name": "Carlos", "role": "Backend"},
+        {"name": "Dana", "role": "Design"}
+      ],
+      "steps": [
+        {
+          "type": "utterance",
+          "delay_ms": 800,
+          "speaker": "Alex",
+          "text": "Thanks everyone. We'll review the sprint, then align on next priorities and risks."
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1400,
+          "speaker": "Bianca",
+          "text": "Looks like Evan is here too, right?",
+          "mentions": ["Evan"]
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1500,
+          "speaker": "Carlos",
+          "text": "We completed eight tasks and had two carryovers due to QA delays."
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1600,
+          "speaker": "Alex",
+          "text": "I decided we'll cut user testing and move straight to shipping.",
+          "tags": ["PRINCIPLE_VIOLATION"],
+          "principle": "Collaborative decision making"
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1700,
+          "speaker": "Dana",
+          "text": "From design, I agree on speed but we should validate the onboarding copy first."
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1600,
+          "speaker": "Bianca",
+          "text": "By the way, what should we do for lunch today?",
+          "tags": ["TOPIC_DRIFT"],
+          "parking_lot": "Lunch plan"
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1400,
+          "speaker": "Alex",
+          "text": "Back to the agenda. Let's prioritize onboarding improvements and keep scope tight."
+        },
+        {
+          "type": "utterance",
+          "delay_ms": 1600,
+          "speaker": "Carlos",
+          "text": "I'll draft the caching spike plan and share it by Friday."
+        }
+      ],
+      "action_items": [
+        {
+          "description": "Draft caching spike plan",
+          "assignee": "Carlos",
+          "dueDate": "Friday",
+          "context": "Backend performance risk"
+        },
+        {
+          "description": "Validate onboarding copy with quick user check",
+          "assignee": "Dana",
+          "dueDate": "Thursday",
+          "context": "Design quality guardrail"
+        }
+      ]
+    }
+  ]
+}

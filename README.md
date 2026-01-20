@@ -1,6 +1,16 @@
 # GradientHair
 
-Multi-Agent 개발을 위한 Skills 레포지토리입니다. Codex CLI의 multi-agent workflow 활용 가이드를 제공합니다.
+Meeting Operator demo app (React + Python + OpenAI SDK) + Multi-Agent workflow docs.
+
+## Demo App (Meeting Operator)
+
+Quick start:
+```bash
+export OPENAI_API_KEY=sk-...
+docker compose up --build
+```
+
+Open the UI at `http://localhost:3000`. Full instructions are in `docs/08-DEMO-APP.md`.
 
 ## 설치 방법
 
