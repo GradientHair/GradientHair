@@ -1,16 +1,117 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useMeetingStore } from "@/store/meeting-store";
+import { getApiBase } from "@/lib/api";
+
+type ActionItem = {
+  item: string;
+  owner: string;
+  due: string;
+};
+
+const parseActionItems = (content?: string | null): ActionItem[] => {
+  if (!content) return [];
+  if (content.includes("추출된 Action Item이 없습니다.")) return [];
+  const lines = content.split("\n").map((line) => line.trim());
+  const tableRows = lines.filter((line) => line.startsWith("|") && !line.includes("---"));
+  const tableItems = tableRows
+    .filter(
+      (line) =>
+        !(line.toLowerCase().includes("action") && line.toLowerCase().includes("owner"))
+    )
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
+    .filter((cells) => cells.length >= 3)
+    .map((cells) => ({
+      item: cells[0],
+      owner: cells[1],
+      due: cells[2],
+    }));
+
+  if (tableItems.length > 0) {
+    return tableItems;
+  }
+
+  const bulletLines = lines.filter((line) => line.startsWith("-"));
+  return bulletLines
+    .map((line) => line.replace(/^-\s*\[\s*\]\s*/, "").replace(/^-/, "").trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const item = parts[0] ?? "";
+      const ownerPart = parts.find((part) => part.toLowerCase().startsWith("owner:"));
+      const duePart = parts.find((part) => part.toLowerCase().startsWith("due:"));
+      return {
+        item,
+        owner: ownerPart ? ownerPart.split(":", 2)[1]?.trim() ?? "" : "",
+        due: duePart ? duePart.split(":", 2)[1]?.trim() ?? "" : "",
+      };
+    })
+    .filter((entry) => entry.item.length > 0);
+};
 
 export default function ReviewPage() {
   const params = useParams();
   const meetingId = params.id as string;
+  const apiBase = getApiBase();
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [actionItemsStatus, setActionItemsStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const { title, transcript, interventions, speakerStats, participants } =
     useMeetingStore();
+
+  useEffect(() => {
+    let isMounted = true;
+    let attempts = 0;
+    const maxAttempts = 10;
+    const intervalMs = 2500;
+
+    const load = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`${apiBase}/meetings/${meetingId}/files`);
+        if (!response.ok) {
+          throw new Error("Failed to load meeting files");
+        }
+        const data = await response.json();
+        const parsed = parseActionItems(data.actionItems);
+
+        if (!isMounted) return;
+
+        if (parsed.length > 0) {
+          setActionItems(parsed);
+          setActionItemsStatus("ready");
+          return;
+        }
+
+        if (data.actionItems) {
+          setActionItemsStatus("empty");
+          return;
+        }
+      } catch {
+        if (!isMounted) return;
+        if (attempts >= maxAttempts) {
+          setActionItemsStatus("error");
+          return;
+        }
+      }
+
+      if (attempts < maxAttempts && isMounted) {
+        setActionItemsStatus("loading");
+        setTimeout(load, intervalMs);
+      } else if (isMounted) {
+        setActionItemsStatus("empty");
+      }
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBase, meetingId]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -85,16 +186,31 @@ export default function ReviewPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>저장된 파일</CardTitle>
+          <CardTitle>Action Items</CardTitle>
         </CardHeader>
-        <CardContent>
-          <ul className="text-sm space-y-1">
-            <li>preparation.md - 회의 준비 자료</li>
-            <li>transcript.md - 전체 녹취록</li>
-            <li>interventions.md - Agent 개입 기록</li>
-            <li>summary.md - 회의 요약</li>
-            <li>action-items.md - Action Items</li>
-          </ul>
+        <CardContent className="space-y-3 text-sm">
+          {actionItemsStatus === "loading" && (
+            <p className="text-gray-500">Action Item을 생성 중입니다...</p>
+          )}
+          {actionItemsStatus === "error" && (
+            <p className="text-red-500">Action Item을 불러오지 못했어요.</p>
+          )}
+          {actionItemsStatus !== "loading" && actionItems.length === 0 && (
+            <p className="text-gray-500">등록된 Action Item이 없습니다.</p>
+          )}
+          {actionItems.length > 0 && (
+            <div className="space-y-2">
+              {actionItems.map((item, index) => (
+                <div key={`${item.item}-${index}`} className="rounded border border-gray-100 p-3">
+                  <p className="font-medium">{item.item}</p>
+                  <p className="text-gray-500">
+                    {item.owner ? `담당자: ${item.owner}` : "담당자 미정"} ·{" "}
+                    {item.due ? `기한: ${item.due}` : "기한 없음"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

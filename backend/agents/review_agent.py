@@ -82,6 +82,10 @@ class EvaluationResponse(BaseModel):
     action_items: list[ActionItemResponse] = Field(default_factory=list)
 
 
+class ActionItemsResponse(BaseModel):
+    items: list[ActionItemResponse] = Field(default_factory=list)
+
+
 class ParticipantFeedbackResponse(BaseModel):
     positives: list[str] = Field(default_factory=list)
     improvements: list[str] = Field(default_factory=list)
@@ -131,15 +135,19 @@ class MeetingEvaluationAgent:
         principles_text = "\n".join(
             [f"- {p.name}: {self._summarize_principle(p.content)}" for p in principles]
         )
-        transcript_text = self._format_transcript(state.transcript, max_entries=40)
+        transcript_text = self._format_transcript(state.transcript, max_entries=25)
         interventions_text = self._format_interventions(state.interventions)
         participants_text = ", ".join([p.name for p in state.participants]) or "없음"
         index_text = self._build_transcript_index(state.transcript)
+        context_text = self._format_action_item_context(state)
 
         return f"""당신은 회의 품질 리뷰어입니다. 회의가 원칙에 맞게 잘 진행되었는지 평가하세요.
 
 회의 제목: {state.title}
 참석자: {participants_text}
+
+회의 컨텍스트(액션 아이템 작성 시 반드시 참고):
+{context_text}
 
 원칙:
 {principles_text}
@@ -199,6 +207,10 @@ JSON으로 응답하세요:
         if not assessments:
             assessments = self._fallback_principle_assessments(state, principles)
 
+        action_items = [a.model_dump() for a in payload.action_items]
+        if not action_items:
+            action_items = self._fallback_action_items(state)
+
         return MeetingEvaluation(
             overall_score=int(payload.overall_score),
             summary=str(payload.summary),
@@ -206,7 +218,7 @@ JSON으로 응답하세요:
             risks=[str(r) for r in payload.risks],
             recommendations=[str(r) for r in payload.recommendations],
             principle_assessments=assessments,
-            action_items=[a.model_dump() for a in payload.action_items],
+            action_items=action_items,
         )
 
     def _fallback_evaluation(
@@ -286,6 +298,22 @@ JSON으로 응답하세요:
         ]
         return "\n".join(lines)
 
+    def _format_action_item_context(self, state: MeetingState) -> str:
+        agenda = state.agenda.strip() if state.agenda else ""
+        parking = ", ".join(state.parking_lot) if state.parking_lot else "없음"
+        trigger_contexts = [
+            inv.trigger_context
+            for inv in state.interventions
+            if inv.trigger_context
+        ]
+        trigger_summary = "; ".join(trigger_contexts[-5:]) if trigger_contexts else "없음"
+        lines = [
+            f"- 아젠다: {agenda or '없음'}",
+            f"- Parking Lot: {parking}",
+            f"- 개입 컨텍스트: {trigger_summary}",
+        ]
+        return "\n".join(lines)
+
     def _summarize_principle(self, content: str) -> str:
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         bullets = [line for line in lines if line[0].isdigit() or line.startswith("-")]
@@ -295,7 +323,7 @@ JSON으로 응답하세요:
     def _build_transcript_index(self, transcript: list[TranscriptEntry]) -> str:
         if not transcript:
             return "데이터 없음"
-        recent = transcript[-60:]
+        recent = transcript[-40:]
         chunks = [recent[i:i + 10] for i in range(0, len(recent), 10)]
         speaker_counts: dict[str, int] = {}
         keyword_counts: dict[str, int] = {}
@@ -425,20 +453,132 @@ JSON으로 응답하세요:
         return ValidationResult(ok=True, value=parsed)
 
 
+class ActionItemAgent:
+    """회의 액션 아이템만 빠르게 추출하는 Agent."""
+
+    def __init__(self):
+        self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
+        self.max_retries = 1
+        self.runner = None
+        if self.client:
+            choice = ModelRouter.select("fast", structured_output=True, api="chat")
+            self.runner = LLMStructuredOutputRunner(
+                client=self.client,
+                model=choice.model,
+                schema=ActionItemsResponse,
+                max_retries=self.max_retries,
+                custom_validator=self._validate_action_items_response,
+            )
+
+    async def analyze(self, state: MeetingState) -> list[dict]:
+        if not state.transcript and not state.parking_lot:
+            return self._fallback_action_items(state)
+        if self.client is None or self.runner is None:
+            return self._fallback_action_items(state)
+        try:
+            prompt = self._build_prompt(state)
+            payload = self.runner.run(prompt)
+            if payload is None:
+                return self._fallback_action_items(state)
+            items = [item.model_dump() for item in payload.items]
+            return items or self._fallback_action_items(state)
+        except Exception:
+            return self._fallback_action_items(state)
+
+    def _build_prompt(self, state: MeetingState) -> str:
+        transcript_text = self._format_transcript(state.transcript, max_entries=20)
+        interventions_text = self._format_interventions(state.interventions)
+        participants_text = ", ".join([p.name for p in state.participants]) or "없음"
+        context_text = self._format_action_item_context(state)
+        return f"""당신은 회의에서 실행 가능한 Action Item을 빠르게 정리합니다.
+
+회의 제목: {state.title}
+참석자: {participants_text}
+
+회의 컨텍스트:
+{context_text}
+
+최근 대화 요약:
+{transcript_text}
+
+개입 기록:
+{interventions_text}
+
+JSON으로 응답하세요:
+{{
+  "items": [
+    {{"item": "할 일", "owner": "담당자", "due": "기한(없으면 빈칸)"}}
+  ]
+}}
+"""
+
+    def _fallback_action_items(self, state: MeetingState) -> list[dict]:
+        if state.parking_lot:
+            return [{"item": item, "owner": "", "due": ""} for item in state.parking_lot]
+        return [{"item": "회의 요약 공유 및 후속 일정 확정", "owner": "", "due": ""}]
+
+    def _validate_action_items_response(self, parsed: ActionItemsResponse) -> ValidationResult:
+        if not parsed.items:
+            return ValidationResult(ok=False, error="no action items")
+        return ValidationResult(ok=True, value=parsed)
+
+    def _format_transcript(self, transcript: list[TranscriptEntry], max_entries: int) -> str:
+        recent = transcript[-max_entries:]
+        lines = [
+            f"[{idx:02d}] {t.timestamp} {t.speaker}: {t.text}"
+            for idx, t in enumerate(recent, start=1)
+        ]
+        return "\n".join(lines) if lines else "내용 없음"
+
+    def _format_interventions(self, interventions: list[Intervention]) -> str:
+        if not interventions:
+            return "개입 없음"
+        lines = [
+            f"- {inv.intervention_type.value}: {inv.message}"
+            for inv in interventions[-6:]
+        ]
+        return "\n".join(lines)
+
+    def _format_action_item_context(self, state: MeetingState) -> str:
+        agenda = state.agenda.strip() if state.agenda else ""
+        parking = ", ".join(state.parking_lot) if state.parking_lot else "없음"
+        trigger_contexts = [
+            inv.trigger_context
+            for inv in state.interventions
+            if inv.trigger_context
+        ]
+        trigger_summary = "; ".join(trigger_contexts[-3:]) if trigger_contexts else "없음"
+        lines = [
+            f"- 아젠다: {agenda or '없음'}",
+            f"- Parking Lot: {parking}",
+            f"- 개입 컨텍스트: {trigger_summary}",
+        ]
+        return "\n".join(lines)
+
+
 class ReviewOrchestratorAgent:
     """회의 종료 전 리뷰 작업을 오케스트레이션하는 멀티 에이전트."""
 
     def __init__(self):
         self.evaluation_agent = MeetingEvaluationAgent()
         self.feedback_agent = ParticipantFeedbackAgent()
+        self.action_item_agent = ActionItemAgent()
         self.principles_service = PrinciplesService()
 
-    async def review(self, state: MeetingState) -> ReviewArtifacts:
+    async def review(
+        self,
+        state: MeetingState,
+        action_items: list[dict] | None = None,
+        generate_action_items: bool = True,
+    ) -> ReviewArtifacts:
         principles = self._load_principles(state)
 
         evaluation_task = asyncio.create_task(
             self.evaluation_agent.analyze(state, principles)
         )
+        action_item_task = None
+        if generate_action_items and action_items is None:
+            action_item_task = asyncio.create_task(self.action_item_agent.analyze(state))
         feedback_tasks = [
             asyncio.create_task(
                 self.feedback_agent.analyze(state, participant, state.transcript)
@@ -446,22 +586,35 @@ class ReviewOrchestratorAgent:
             for participant in state.participants
         ]
 
-        results = await asyncio.gather(evaluation_task, *feedback_tasks, return_exceptions=True)
+        tasks = [evaluation_task]
+        if action_item_task is not None:
+            tasks.append(action_item_task)
+        tasks.extend(feedback_tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         evaluation: MeetingEvaluation
-        if isinstance(results[0], MeetingEvaluation):
-            evaluation = results[0]
-        else:
+        evaluation = results[0] if isinstance(results[0], MeetingEvaluation) else None
+        if evaluation is None:
             evaluation = self.evaluation_agent._fallback_evaluation(state, principles)
 
+        if action_items is None and action_item_task is not None:
+            action_result = results[1] if len(results) > 1 else None
+            if isinstance(action_result, list):
+                action_items = action_result
+            else:
+                action_items = self.action_item_agent._fallback_action_items(state)
+        if action_items is None:
+            action_items = evaluation.action_items or self.action_item_agent._fallback_action_items(state)
+
         feedbacks: list[ParticipantFeedback] = []
-        for item in results[1:]:
+        feedback_start = 1 + (1 if action_item_task is not None else 0)
+        for item in results[feedback_start:]:
             if isinstance(item, ParticipantFeedback):
                 feedbacks.append(item)
 
         return ReviewArtifacts(
             summary_markdown=self._format_summary_markdown(state, evaluation),
-            action_items_markdown=self._format_action_items(evaluation.action_items),
+            action_items_markdown=self._format_action_items(action_items),
             feedback_by_participant=self._format_feedback(feedbacks),
         )
 
@@ -515,12 +668,11 @@ class ReviewOrchestratorAgent:
             lines.append("추출된 Action Item이 없습니다.")
             return "\n".join(lines) + "\n"
 
-        lines.append("| Action | Owner | Due |")
-        lines.append("|---|---|---|")
         for item in action_items:
-            lines.append(
-                f"| {item.get('item', '')} | {item.get('owner', '')} | {item.get('due', '')} |"
-            )
+            task = item.get("item", "")
+            owner = item.get("owner", "") or "-"
+            due = item.get("due", "") or "-"
+            lines.append(f"- [ ] {task} | Owner: {owner} | Due: {due}")
         return "\n".join(lines) + "\n"
 
     def _format_feedback(self, feedbacks: list[ParticipantFeedback]) -> dict[str, str]:
