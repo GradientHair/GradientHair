@@ -1037,95 +1037,32 @@ python main.py
 
 **frontend/lib/demo-simulator.ts**
 ```typescript
-export const demoScript = [
-  { speaker: "김철수", text: "지난 스프린트에서 8개 태스크를 완료했습니다.", delay: 0 },
-  { speaker: "이민수", text: "네, 성과가 좋았어요.", delay: 3000 },
-  { speaker: "이민수", text: "그런데 점심 뭐 먹을까요?", delay: 6000, triggerIntervention: "TOPIC_DRIFT" },
-  { speaker: "김철수", text: "아, 네. 다음 스프린트 계획을 보면...", delay: 12000 },
-  { speaker: "김철수", text: "이번 스프린트는 API 최적화에 집중합시다.", delay: 15000 },
-  { speaker: "김철수", text: "박영희 씨, 동의하시죠?", delay: 18000, triggerIntervention: "DECISION_STYLE" },
-  // ... 추가 시나리오
+const buildDemoScript = (context: DemoContext) => [
+  { speaker: "김철수", text: `지난 스프린트 성과를 공유할게요. ${context.agendaTopic}부터 볼게요.`, delay: 0 },
+  { speaker: "이민수", text: "좋습니다. 지표도 함께 보죠.", delay: 3000 },
+  { speaker: "이민수", text: context.driftLine, delay: 6000, triggerIntervention: "TOPIC_DRIFT" },
+  { speaker: "김철수", text: `좋아요. ${context.agendaTopic}로 돌아가죠.`, delay: 12000 },
+  { speaker: "김철수", text: "이건 제가 결정했으니까, 다들 이대로 진행해 주세요.", delay: 18000, triggerIntervention: "PRINCIPLE_VIOLATION" },
+  { speaker: "김철수", text: "좋습니다. 그럼 다음 주까지 각자 태스크 정리해주세요.", delay: 24000, triggerIntervention: "PARTICIPATION_IMBALANCE" },
 ];
 
 export class DemoSimulator {
-  private scriptIndex = 0;
-  private onTranscript: (entry: any) => void;
-  private onIntervention: (intervention: any) => void;
-  private soundPlayer: { playAlert: () => void };
+  private script: DemoScriptEntry[];
+  private interventionMessages: Record<string, InterventionPayload>;
 
-  constructor(
-    onTranscript: (entry: any) => void,
-    onIntervention: (intervention: any) => void,
-    soundPlayer: { playAlert: () => void }
-  ) {
-    this.onTranscript = onTranscript;
-    this.onIntervention = onIntervention;
-    this.soundPlayer = soundPlayer;
+  constructor(onTranscript: (entry: DemoScriptEntry) => void, onIntervention: (intervention: any) => void) {
+    const context = buildDemoContext();
+    this.script = buildDemoScript(context);
+    this.interventionMessages = buildInterventionMessages(context);
   }
 
   start() {
-    this.playNext();
-  }
-
-  private playNext() {
-    if (this.scriptIndex >= demoScript.length) return;
-
-    const entry = demoScript[this.scriptIndex];
-
-    setTimeout(() => {
-      this.onTranscript({
-        speaker: entry.speaker,
-        text: entry.text,
-        timestamp: new Date().toISOString()
-      });
-
-      if (entry.triggerIntervention) {
-        // 발화 멈춤 후 1.5초 뒤 개입 (침묵 감지 시뮬레이션)
-        setTimeout(() => {
-          // 경고음 재생
-          this.soundPlayer.playAlert();
-          // Toast 표시
-          this.onIntervention(this.getIntervention(entry.triggerIntervention));
-        }, 1500);
-      }
-
-      this.scriptIndex++;
-      this.playNext();
-    }, entry.delay);
-  }
-
-  private getIntervention(type: string) {
-    const interventions: Record<string, any> = {
-      TOPIC_DRIFT: {
-        id: "int_demo_001",
-        type: "TOPIC_DRIFT",
-        message: "재미있는 이야기네요! 다만 시간 관계상, 현재 논의 중인 '스프린트 계획'을 먼저 마무리하면 어떨까요?",
-        parkingLotItem: "점심 메뉴",
-        playAlertSound: true
-      },
-      DECISION_STYLE: {
-        id: "int_demo_002",
-        type: "DECISION_STYLE",
-        message: "잠깐요! 중요한 결정 전에, 아직 의견을 말씀하지 않으신 박영희 님의 생각도 들어보면 어떨까요?",
-        violatedPrinciple: "수평적 의사결정",
-        suggestedSpeaker: "박영희",
-        playAlertSound: true
-      },
-      PARTICIPATION_IMBALANCE: {
-        id: "int_demo_003",
-        type: "PARTICIPATION_IMBALANCE",
-        message: "지금까지 김철수 님이 발언의 70%를 차지하고 계세요. 다른 분들의 의견도 들어볼까요?",
-        playAlertSound: true
-      },
-      PRINCIPLE_VIOLATION: {
-        id: "int_demo_004",
-        type: "PRINCIPLE_VIOLATION",
-        message: "말씀 중에 죄송합니다. 'Disagree and Commit' 원칙에 따라, 이견이 있으시면 지금 말씀해 주세요.",
-        violatedPrinciple: "Disagree and Commit",
-        playAlertSound: true
-      }
-    };
-    return interventions[type] || interventions.TOPIC_DRIFT;
+    // 랜덤으로 생성된 시나리오를 재생
+    this.script.forEach((entry) => {
+      setTimeout(() => {
+        // transcript & intervention emit
+      }, entry.delay);
+    });
   }
 }
 ```
