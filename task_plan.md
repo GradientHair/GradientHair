@@ -4,7 +4,7 @@
 Mirror local Claude and Codex skill directories into this repo so collaborators can clone and use them.
 
 ## Current Phase
-Phase 3
+Phase 5
 
 ## Phases
 
@@ -22,8 +22,8 @@ Phase 3
 ### Phase 3: Implementation
 - [x] Copy skill directories into repo (excluding system skills and nested .git)
 - [x] Update README to list new skills
-- [ ] Stage and commit changes
-- **Status:** in_progress
+- [x] Stage and commit changes
+- **Status:** complete
 
 ### Phase 4: Testing & Verification
 - [x] Verify repo contents match local skills
@@ -33,7 +33,7 @@ Phase 3
 ### Phase 5: Delivery
 - [ ] Push to remote
 - [ ] Summarize changes to user
-- **Status:** pending
+- **Status:** in_progress
 
 ## Decisions Made
 | Decision | Rationale |
@@ -44,3 +44,4 @@ Phase 3
 ## Errors Encountered
 | Error | Resolution |
 |-------|------------|
+| Push rejected (remote had new commits) | Pull with rebase and retry push |

@@ -7,3 +7,4 @@
 - Copied local skills into repo: `planning-with-files`, `openai-agents-python`, updated `multi-agent-guide` with `SKILL.md`.
 - Updated `README.md` to list new skills.
 - Verified `planning-with-files` and `openai-agents-python` match local Codex copies (excluding nested .git).
+- Push rejected due to remote updates; attempted pull --rebase but blocked by unstaged planning file update.
