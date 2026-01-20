@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
 
 # Configure logging
 logging.basicConfig(
@@ -473,6 +473,26 @@ async def create_principle(create: PrincipleCreate):
             detail="Failed to create principle"
         )
     return result
+
+
+@app.delete("/api/v1/principles/{principle_id}", status_code=204)
+async def delete_principle(principle_id: str):
+    """
+    Delete a principle by ID.
+
+    Args:
+        principle_id: The unique identifier of the principle
+
+    Raises:
+        404: If the principle is not found.
+    """
+    deleted = principles_service.delete_principle(principle_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Principle '{principle_id}' not found"
+        )
+    return Response(status_code=204)
 
 
 # ============================================================================

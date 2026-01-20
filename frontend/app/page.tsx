@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,11 +36,36 @@ export default function MeetingPrepPage() {
   const [newRole, setNewRole] = useState("");
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
-
-  const principles = [
+  const [principles, setPrinciples] = useState<Array<{ id: string; name: string }>>([
     { id: "agile", name: "Agile 원칙" },
     { id: "aws-leadership", name: "AWS Leadership Principles" },
-  ];
+  ]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPrinciples = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/principles`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!Array.isArray(data.principles)) return;
+        if (isMounted) {
+          setPrinciples(
+            data.principles.map((principle: { id: string; name: string }) => ({
+              id: principle.id,
+              name: principle.name,
+            }))
+          );
+        }
+      } catch {
+        // fallback to defaults
+      }
+    };
+    loadPrinciples();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleAddParticipant = () => {
     if (newName && newRole) {
