@@ -81,3 +81,26 @@ class StorageService:
 
         with open(meeting_dir / "interventions.md", "w", encoding="utf-8") as f:
             f.write(content)
+
+    async def save_summary(self, state: MeetingState, content: str):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        with open(meeting_dir / "summary.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_action_items(self, state: MeetingState, content: str):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        with open(meeting_dir / "action-items.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_individual_feedback(self, state: MeetingState, feedback_by_participant: dict[str, str]):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        feedback_dir = meeting_dir / "feedback"
+        feedback_dir.mkdir(exist_ok=True)
+        for participant_name, content in feedback_by_participant.items():
+            filename = self._safe_filename(participant_name) or "participant"
+            with open(feedback_dir / f"{filename}.md", "w", encoding="utf-8") as f:
+                f.write(content)
+
+    def _safe_filename(self, name: str) -> str:
+        safe = "".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-")
+        return safe[:64]
