@@ -14,6 +14,7 @@ type MeetingFiles = {
   transcript?: string | null;
   interventions?: string | null;
   actionItems?: string | null;
+  feedback?: Record<string, string> | null;
 };
 
 type ParsedPreparation = {

@@ -552,6 +552,7 @@ class MeetingFilesResponse(BaseModel):
     interventions: str | None
     summary: str | None = None
     actionItems: str | None = None
+    feedback: dict[str, str] | None = None
 
 
 @app.get("/api/v1/meetings", response_model=MeetingListResponse)

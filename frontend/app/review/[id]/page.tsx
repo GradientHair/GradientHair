@@ -14,6 +14,16 @@ type ActionItem = {
   due: string;
 };
 
+type FeedbackMap = Record<string, string>;
+
+const formatFeedbackContent = (content: string) => {
+  const lines = content.split("\n");
+  if (lines[0]?.startsWith("# 개인 피드백:")) {
+    return lines.slice(1).join("\n").trim();
+  }
+  return content.trim();
+};
+
 const parseActionItems = (content?: string | null): ActionItem[] => {
   if (!content) return [];
   if (content.includes("추출된 Action Item이 없습니다.")) return [];
@@ -60,6 +70,7 @@ export default function ReviewPage() {
   const apiBase = getApiBase();
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [actionItemsStatus, setActionItemsStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [feedbackByParticipant, setFeedbackByParticipant] = useState<FeedbackMap>({});
   const { title, transcript, interventions, speakerStats, participants } =
     useMeetingStore();
 
@@ -80,6 +91,10 @@ export default function ReviewPage() {
         const parsed = parseActionItems(data.actionItems);
 
         if (!isMounted) return;
+
+        if (data.feedback && typeof data.feedback === "object") {
+          setFeedbackByParticipant(data.feedback);
+        }
 
         if (parsed.length > 0) {
           setActionItems(parsed);
@@ -183,6 +198,25 @@ export default function ReviewPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>참석자 피드백</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          {Object.keys(feedbackByParticipant).length === 0 && (
+            <p className="text-gray-500">개인 피드백이 아직 생성되지 않았어요.</p>
+          )}
+          {Object.entries(feedbackByParticipant).map(([name, content]) => (
+            <div key={name} className="rounded border border-gray-100 p-3">
+              <p className="font-semibold">{name}</p>
+              <pre className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+                {formatFeedbackContent(content)}
+              </pre>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
