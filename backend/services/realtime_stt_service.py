@@ -200,7 +200,7 @@ class RealtimeSTTService:
                     "modalities": ["text", "audio"],
                     "input_audio_format": "pcm16",
                     "input_audio_transcription": {
-                        "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
+                        "model": os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe-diarize"),
                         "language": os.getenv("REALTIME_TRANSCRIBE_LANGUAGE", "ko"),
                     },
                     "turn_detection": {
