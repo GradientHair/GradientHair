@@ -726,6 +726,9 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     safety_orchestrator = SafetyOrchestrator()
     storage = StorageService()
     speaker_stats_applied: set[str] = set()
+    pending_transcripts: dict[str, TranscriptEntry] = {}
+    pending_speech_end = False
+    last_agent_run_at = 0.0
 
     def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
         existing_by_id = {p.id: p for p in existing}
@@ -776,6 +779,14 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         await manager.send_message(
             meeting_id, {"type": "speaker_stats", "data": {"stats": stats}}
         )
+
+    async def maybe_run_agents():
+        nonlocal last_agent_run_at
+        now = asyncio.get_event_loop().time()
+        if now - last_agent_run_at < 1.0:
+            return
+        last_agent_run_at = now
+        await run_agents()
 
     async def _enrich_transcript(entry: TranscriptEntry) -> None:
         speaker = entry.speaker
@@ -833,40 +844,110 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             except Exception as e:
                 logger.warning(f"[{meeting_id}] Failed to send speaker stats: {e}")
 
+    async def add_partial_transcript(item_id: str, text: str) -> None:
+        nonlocal pending_speech_end
+        if not item_id:
+            return
+        text = (text or "").strip()
+        if not text:
+            return
+
+        entry = pending_transcripts.get(item_id)
+        if entry is None:
+            entry = TranscriptEntry(
+                id=f"rt_{item_id}",
+                timestamp=datetime.utcnow().isoformat(),
+                speaker="Unknown",
+                text=text,
+                confidence=0.0,
+                latency_ms=0.0,
+            )
+            pending_transcripts[item_id] = entry
+            state.transcript.append(entry)
+            try:
+                await manager.send_message(
+                    meeting_id, {"type": "transcript", "data": entry.__dict__}
+                )
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to send partial transcript: {e}")
+        else:
+            entry.text = text
+            try:
+                await manager.send_message(
+                    meeting_id,
+                    {
+                        "type": "transcript_update",
+                        "data": {"id": entry.id, "text": entry.text},
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to update partial transcript: {e}")
+
+        if pending_speech_end:
+            pending_speech_end = False
+            await maybe_run_agents()
+
     async def add_transcript(
         text: str,
         latency_ms: float | None = None,
         speaker_override: str | None = None,
+        item_id: str | None = None,
     ):
         start_perf = asyncio.get_event_loop().time()
         logger.info(f"=== TRANSCRIPT RECEIVED: '{text}' ===")
 
         speaker = speaker_override or "Unknown"
-        entry = TranscriptEntry(
-            id=f"tr_{uuid.uuid4().hex[:8]}",
-            timestamp=datetime.utcnow().isoformat(),
-            speaker=speaker,
-            text=text,
-            confidence=0.0 if speaker == "Unknown" else 1.0,
-            latency_ms=(latency_ms or 0.0) + max(0.0, (asyncio.get_event_loop().time() - start_perf) * 1000),
-        )
-        state.transcript.append(entry)
-        asyncio.create_task(storage.append_transcript_entry(state, entry))
-
-        logger.info(f"Sending transcript to frontend for meeting: {meeting_id}")
-        try:
-            await manager.send_message(
-                meeting_id, {"type": "transcript", "data": entry.__dict__}
+        entry = None
+        if item_id:
+            entry = pending_transcripts.pop(item_id, None)
+        if entry is None:
+            entry = TranscriptEntry(
+                id=f"tr_{uuid.uuid4().hex[:8]}",
+                timestamp=datetime.utcnow().isoformat(),
+                speaker=speaker,
+                text=text,
+                confidence=0.0 if speaker == "Unknown" else 1.0,
+                latency_ms=(latency_ms or 0.0)
+                + max(0.0, (asyncio.get_event_loop().time() - start_perf) * 1000),
             )
-            logger.info(f"Transcript sent successfully")
-        except Exception as e:
-            logger.error(f"Failed to send transcript: {e}")
+            state.transcript.append(entry)
+            logger.info(f"Sending transcript to frontend for meeting: {meeting_id}")
+            try:
+                await manager.send_message(
+                    meeting_id, {"type": "transcript", "data": entry.__dict__}
+                )
+                logger.info("Transcript sent successfully")
+            except Exception as e:
+                logger.error(f"Failed to send transcript: {e}")
+        else:
+            entry.text = text
+            entry.latency_ms = (latency_ms or 0.0) + max(
+                0.0, (asyncio.get_event_loop().time() - start_perf) * 1000
+            )
+            entry.confidence = 0.0 if speaker == "Unknown" else 1.0
+            try:
+                await manager.send_message(
+                    meeting_id,
+                    {
+                        "type": "transcript_update",
+                        "data": {
+                            "id": entry.id,
+                            "text": entry.text,
+                            "latencyMs": entry.latency_ms,
+                        },
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to send transcript update: {e}")
+
+        asyncio.create_task(storage.append_transcript_entry(state, entry))
 
         if speaker_override:
             if _apply_speaker_stats(entry, speaker_override):
                 await _send_speaker_stats()
         else:
             asyncio.create_task(_enrich_transcript(entry))
+            await maybe_run_agents()
 
     async def run_agents():
         # 멀티에이전트 병렬 분석 (SafetyOrchestrator)
@@ -900,11 +981,15 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             except Exception as e:
                 logger.warning(f"[{meeting_id}] Failed to send intervention: {e}")
 
-    async def on_transcript(text: str, latency_ms: float | None = None):
-        await add_transcript(text, latency_ms=latency_ms)
+    async def on_transcript(text: str, latency_ms: float | None = None, item_id: str | None = None):
+        await add_transcript(text, latency_ms=latency_ms, item_id=item_id)
 
     async def on_speech_end():
-        await run_agents()
+        nonlocal pending_speech_end
+        pending_speech_end = True
+
+    async def on_partial_transcript(item_id: str, text: str):
+        await add_partial_transcript(item_id, text)
 
     async def on_stt_error(error: Exception):
         error_text = str(error) or error.__class__.__name__
@@ -946,6 +1031,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
             on_speech_end,
             on_error=on_stt_error,
             on_connection_state_change=on_connection_state_change,
+            on_partial_transcript=on_partial_transcript,
         )
         stt_connected = True
         logger.info(f"Realtime STT connected for meeting {meeting_id}")
