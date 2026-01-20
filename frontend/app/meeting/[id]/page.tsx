@@ -19,6 +19,7 @@ export default function MeetingRoomPage() {
   const meetingId = params.id as string;
   const apiBase = getApiBase();
   const initialMode = searchParams.get("mode") === "agent" ? "agent" : "audio";
+  const isAgentMeeting = initialMode === "agent";
 
   const { title, startMeeting, endMeeting, agenda, updateSpeakerStats, participants, transcript } = useMeetingStore();
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -263,15 +264,19 @@ export default function MeetingRoomPage() {
 
       {/* 컨트롤 버튼 */}
       <div className="flex justify-center gap-4 mt-6">
-        <Button variant="outline" onClick={handleMuteToggle}>
-          {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
-        </Button>
-        <Button
-          variant={isAgentMode ? "destructive" : "outline"}
-          onClick={isAgentMode ? stopAgentMode : startAgentMode}
-        >
-          {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
-        </Button>
+        {!isAgentMeeting && (
+          <Button variant="outline" onClick={handleMuteToggle}>
+            {!isRecording ? "오디오 시작" : isMuted ? "음소거 해제" : "음소거"}
+          </Button>
+        )}
+        {isAgentMeeting && (
+          <Button
+            variant={isAgentMode ? "destructive" : "outline"}
+            onClick={isAgentMode ? stopAgentMode : startAgentMode}
+          >
+            {isAgentMode ? "에이전트 중지" : "에이전트 모드"}
+          </Button>
+        )}
         <Button variant="destructive" onClick={handleEndMeeting}>
           회의 종료
         </Button>
