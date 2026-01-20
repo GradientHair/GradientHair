@@ -244,7 +244,58 @@ class SafetyOrchestrator:
         self.adversary = AdversarialReviewerAgent()
         self.group_chat = GroupChatCoordinator()
         self.last_intervention_time = 0
-        self.min_intervention_interval = 15
+        self.min_intervention_interval = 15  # Base interval between interventions
+        # Track recent interventions to prevent duplicates
+        self.recent_interventions: list[dict] = []  # [{type, message_hash, timestamp}]
+        self.max_recent_interventions = 10
+        self.intervention_type_cooldowns = {
+            "TOPIC_DRIFT": 60,  # 60 seconds cooldown for same type
+            "PRINCIPLE_VIOLATION": 45,
+            "PARTICIPATION_IMBALANCE": 90,
+            "DECISION_STYLE": 60,
+        }
+
+    def _get_message_hash(self, message: str) -> str:
+        """Create a simple hash of the message for deduplication."""
+        import hashlib
+        # Normalize message: lowercase, remove extra whitespace
+        normalized = " ".join(message.lower().split())
+        return hashlib.md5(normalized.encode()).hexdigest()[:8]
+
+    def _is_duplicate_intervention(self, intervention_type: str, message: str, current_time: float) -> bool:
+        """Check if this intervention is a duplicate of a recent one."""
+        message_hash = self._get_message_hash(message)
+        type_cooldown = self.intervention_type_cooldowns.get(intervention_type, 60)
+
+        # Clean up old interventions
+        self.recent_interventions = [
+            r for r in self.recent_interventions
+            if current_time - r["timestamp"] < max(self.intervention_type_cooldowns.values())
+        ]
+
+        for recent in self.recent_interventions:
+            time_diff = current_time - recent["timestamp"]
+
+            # Same message hash within cooldown period
+            if recent["message_hash"] == message_hash and time_diff < type_cooldown:
+                return True
+
+            # Same intervention type within type-specific cooldown
+            if recent["type"] == intervention_type and time_diff < type_cooldown:
+                return True
+
+        return False
+
+    def _record_intervention(self, intervention_type: str, message: str, current_time: float) -> None:
+        """Record an intervention for future duplicate checking."""
+        self.recent_interventions.append({
+            "type": intervention_type,
+            "message_hash": self._get_message_hash(message),
+            "timestamp": current_time,
+        })
+        # Keep only recent interventions
+        if len(self.recent_interventions) > self.max_recent_interventions:
+            self.recent_interventions = self.recent_interventions[-self.max_recent_interventions:]
 
     async def analyze(
         self,
@@ -298,12 +349,30 @@ class SafetyOrchestrator:
         intervention = self._merge_interventions(results, recent_transcript)
         intervention = await self.verifier.verify(intervention)
         if intervention:
+            # Check for duplicate intervention
+            if self._is_duplicate_intervention(
+                intervention.intervention_type.value,
+                intervention.message,
+                current_time
+            ):
+                return OrchestratorResult(
+                    intervention=None,
+                    errors=errors,
+                    warnings=["Skipped duplicate intervention"],
+                )
+
             approved, note = self.adversary.review(intervention)
             if not approved:
                 intervention.message = f"검증 실패로 개입을 보류합니다. ({note})"
                 intervention.intervention_type = InterventionType.DECISION_STYLE
+
         if intervention:
             self.last_intervention_time = current_time
+            self._record_intervention(
+                intervention.intervention_type.value,
+                intervention.message,
+                current_time
+            )
 
         return OrchestratorResult(
             intervention=intervention,
