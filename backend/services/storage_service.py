@@ -205,21 +205,7 @@ class StorageService:
         with open(meeting_dir / "transcript.md", "w", encoding="utf-8") as f:
             f.write(content)
 
-        # Plain text transcript for easy log-style consumption
-        txt_lines: list[str] = []
-        for entry in state.transcript:
-            time_str = entry.timestamp[:19].replace("T", " ")
-            try:
-                # Handle ISO timestamps with timezone or Z
-                iso_ts = entry.timestamp.replace("Z", "+00:00")
-                parsed = datetime.fromisoformat(iso_ts)
-                time_str = parsed.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                pass
-            txt_lines.append(f"[{time_str}] {entry.speaker}: {entry.text}")
-
-        with open(meeting_dir / "transcript.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(txt_lines) + ("\n" if txt_lines else ""))
+        # transcript_live.txt is the rolling plain-text log
 
     async def save_interventions(self, state: MeetingState):
         meeting_dir = self.get_meeting_dir(state.meeting_id)

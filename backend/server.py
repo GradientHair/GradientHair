@@ -964,7 +964,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                 audio_size = len(data.get("data", ""))
                 logger.info(f"[{meeting_id}] Audio chunk #{audio_chunk_count} received, size: {audio_size} bytes")
 
-                await storage.append_audio_chunk(meeting_id, data.get("data", ""))
+                asyncio.create_task(storage.append_audio_chunk(meeting_id, data.get("data", "")))
                 if stt_connected and stt_service.is_connected:
                     success = await stt_service.send_audio(data["data"])
                     if success:
