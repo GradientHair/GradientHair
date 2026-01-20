@@ -306,6 +306,18 @@ async def start_meeting(meeting_id: str):
     )
 
 
+async def _run_review_jobs(state: MeetingState) -> None:
+    storage = StorageService()
+    try:
+        review_agent = ReviewOrchestratorAgent()
+        review = await review_agent.review(state)
+        await storage.save_summary(state, review.summary_markdown)
+        await storage.save_action_items(state, review.action_items_markdown)
+        await storage.save_individual_feedback(state, review.feedback_by_participant)
+    except Exception as e:
+        logger.error(f"Review generation failed: {e}", exc_info=True)
+
+
 @app.post("/api/v1/meetings/{meeting_id}/end")
 async def end_meeting(meeting_id: str):
     state = meetings.get(meeting_id)
@@ -318,16 +330,9 @@ async def end_meeting(meeting_id: str):
     storage = StorageService()
     await storage.save_transcript(state)
     await storage.save_interventions(state)
-    try:
-        review_agent = ReviewOrchestratorAgent()
-        review = await review_agent.review(state)
-        await storage.save_summary(state, review.summary_markdown)
-        await storage.save_action_items(state, review.action_items_markdown)
-        await storage.save_individual_feedback(state, review.feedback_by_participant)
-    except Exception as e:
-        logger.error(f"Review generation failed: {e}")
+    asyncio.create_task(_run_review_jobs(state))
 
-    return {"id": meeting_id, "status": "completed"}
+    return {"id": meeting_id, "status": "completed", "reviewStatus": "queued"}
 
 
 @app.post("/api/v1/meetings/{meeting_id}/save")
@@ -379,16 +384,9 @@ async def save_meeting(meeting_id: str, request: SaveMeetingRequest):
     await storage.save_preparation(state)
     await storage.save_transcript(state)
     await storage.save_interventions(state)
-    try:
-        review_agent = ReviewOrchestratorAgent()
-        review = await review_agent.review(state)
-        await storage.save_summary(state, review.summary_markdown)
-        await storage.save_action_items(state, review.action_items_markdown)
-        await storage.save_individual_feedback(state, review.feedback_by_participant)
-    except Exception as e:
-        logger.error(f"Review generation failed: {e}")
+    asyncio.create_task(_run_review_jobs(state))
 
-    return {"id": meeting_id, "status": "saved", "files": [
+    return {"id": meeting_id, "status": "saved", "reviewStatus": "queued", "files": [
         f"meetings/{meeting_id}/preparation.md",
         f"meetings/{meeting_id}/transcript.md",
         f"meetings/{meeting_id}/interventions.md",
