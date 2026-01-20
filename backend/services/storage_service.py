@@ -72,6 +72,80 @@ class StorageService:
         if len(buffer) >= self._buffer_flush_size or (now - last_flush) >= self._buffer_flush_interval:
             await self._flush_transcript_buffer(state.meeting_id)
 
+    def list_meetings(self) -> list[dict]:
+        meetings: list[dict] = []
+        for entry in self.base_path.iterdir():
+            if not entry.is_dir():
+                continue
+
+            preparation_path = entry / "preparation.md"
+            transcript_path = entry / "transcript.md"
+            interventions_path = entry / "interventions.md"
+
+            title = None
+            scheduled_at = None
+            if preparation_path.exists():
+                try:
+                    content = preparation_path.read_text(encoding="utf-8")
+                    for line in content.splitlines():
+                        if line.startswith("- **제목**:"):
+                            title = line.split(":", 1)[1].strip()
+                        elif line.startswith("- **일시**:"):
+                            scheduled_at = line.split(":", 1)[1].strip()
+                except OSError:
+                    pass
+
+            updated_at = None
+            try:
+                file_times = []
+                for file in entry.iterdir():
+                    if file.is_file():
+                        file_times.append(file.stat().st_mtime)
+                if file_times:
+                    updated_at = datetime.fromtimestamp(max(file_times)).isoformat()
+                else:
+                    updated_at = datetime.fromtimestamp(entry.stat().st_mtime).isoformat()
+            except OSError:
+                updated_at = None
+
+            meetings.append(
+                {
+                    "id": entry.name,
+                    "title": title,
+                    "scheduledAt": scheduled_at,
+                    "updatedAt": updated_at,
+                    "hasTranscript": transcript_path.exists(),
+                    "hasInterventions": interventions_path.exists(),
+                }
+            )
+
+        meetings.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+        return meetings
+
+    def get_meeting_files(self, meeting_id: str) -> dict | None:
+        normalized_id = self._normalize_meeting_id(meeting_id)
+        meeting_dir = self.base_path / normalized_id
+        legacy_dir = self.base_path / meeting_id
+        if legacy_dir.exists() and not meeting_dir.exists():
+            meeting_dir = legacy_dir
+        if not meeting_dir.exists() or not meeting_dir.is_dir():
+            return None
+
+        def read_optional(path: Path) -> str | None:
+            if not path.exists():
+                return None
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError:
+                return None
+
+        return {
+            "id": meeting_id,
+            "preparation": read_optional(meeting_dir / "preparation.md"),
+            "transcript": read_optional(meeting_dir / "transcript.md"),
+            "interventions": read_optional(meeting_dir / "interventions.md"),
+        }
+
     async def save_preparation(self, state: MeetingState):
         meeting_dir = self.get_meeting_dir(state.meeting_id)
         content = f"""# 회의 준비 자료
@@ -149,3 +223,26 @@ class StorageService:
 
         with open(meeting_dir / "interventions.md", "w", encoding="utf-8") as f:
             f.write(content)
+
+    async def save_summary(self, state: MeetingState, content: str):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        with open(meeting_dir / "summary.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_action_items(self, state: MeetingState, content: str):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        with open(meeting_dir / "action-items.md", "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def save_individual_feedback(self, state: MeetingState, feedback_by_participant: dict[str, str]):
+        meeting_dir = self.get_meeting_dir(state.meeting_id)
+        feedback_dir = meeting_dir / "feedback"
+        feedback_dir.mkdir(exist_ok=True)
+        for participant_name, content in feedback_by_participant.items():
+            filename = self._safe_filename(participant_name) or "participant"
+            with open(feedback_dir / f"{filename}.md", "w", encoding="utf-8") as f:
+                f.write(content)
+
+    def _safe_filename(self, name: str) -> str:
+        safe = "".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-")
+        return safe[:64]

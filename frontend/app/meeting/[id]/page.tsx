@@ -11,11 +11,13 @@ import { InterventionToast } from "@/components/intervention-toast";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAudioCapture } from "@/hooks/use-audio-capture";
 import { DemoSimulator } from "@/lib/demo-simulator";
+import { getApiBase } from "@/lib/api";
 
 export default function MeetingRoomPage() {
   const params = useParams();
   const router = useRouter();
   const meetingId = params.id as string;
+  const apiBase = getApiBase();
 
   const { status, title, startMeeting, endMeeting, agenda, addTranscript, addIntervention, updateSpeakerStats, participants, transcript } = useMeetingStore();
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -135,7 +137,7 @@ export default function MeetingRoomPage() {
 
     try {
       // 데모 모드 또는 오프라인: 프론트엔드 데이터를 백엔드로 전송하여 저장
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/meetings/${meetingId}/save`, {
+      const response = await fetch(`${apiBase}/meetings/${meetingId}/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

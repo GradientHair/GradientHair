@@ -12,3 +12,4 @@ __pycache__/
 !backend/.env.local.example
 !frontend/.env.local.example
 meetings/
+.last_test_run

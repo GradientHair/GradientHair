@@ -1,8 +1,21 @@
 """Topic Agent - 주제 이탈 감지"""
-import json
+import os
+from typing import Optional
+
 from openai import OpenAI
+from pydantic import BaseModel, Field
+
 from agents.base_agent import BaseAgent, AnalysisResult
 from models.meeting import MeetingState, TranscriptEntry
+from services.llm_validation import LLMStructuredOutputRunner, ValidationResult
+from services.model_router import ModelRouter
+
+
+class TopicDriftResponse(BaseModel):
+    is_off_topic: bool = Field(...)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    off_topic_content: Optional[str] = None
+    parking_lot_item: Optional[str] = None
 
 
 class TopicAgent(BaseAgent):
@@ -10,7 +23,18 @@ class TopicAgent(BaseAgent):
 
     def __init__(self):
         super().__init__("TopicAgent")
-        self.client = OpenAI()
+        self.client = OpenAI() if os.getenv("OPENAI_API_KEY") else None
+        self.max_retries = 2
+        self.runner = None
+        if self.client:
+            choice = ModelRouter.select("fast", structured_output=True, api="chat")
+            self.runner = LLMStructuredOutputRunner(
+                client=self.client,
+                model=choice.model,
+                schema=TopicDriftResponse,
+                max_retries=self.max_retries,
+                custom_validator=self._validate_response,
+            )
 
     async def analyze(
         self,
@@ -43,23 +67,26 @@ JSON 응답:
 }}
 """
 
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-        )
+        if self.runner is None:
+            return AnalysisResult(agent_name=self.name, needs_intervention=False)
+        parsed = self.runner.run(prompt)
+        if parsed is None:
+            return AnalysisResult(agent_name=self.name, needs_intervention=False)
 
-        result = json.loads(response.choices[0].message.content)
-
-        if result.get("is_off_topic") and result.get("confidence", 0) > 0.7:
-            parking_lot = result.get("parking_lot_item")
+        if parsed.is_off_topic and parsed.confidence > 0.7:
+            parking_lot = parsed.parking_lot_item
             return AnalysisResult(
                 agent_name=self.name,
                 needs_intervention=True,
                 intervention_type="TOPIC_DRIFT",
                 message=f"잠깐요, 아젠다에서 벗어났어요. 원래 주제로 돌아갈게요.{f' {parking_lot}은(는) Parking Lot에 추가했습니다.' if parking_lot else ''}",
-                confidence=result.get("confidence", 0.8),
+                confidence=parsed.confidence,
                 parking_lot_item=parking_lot,
             )
 
         return AnalysisResult(agent_name=self.name, needs_intervention=False)
+
+    def _validate_response(self, parsed: TopicDriftResponse) -> ValidationResult:
+        if parsed.is_off_topic and not (parsed.parking_lot_item or parsed.off_topic_content):
+            return ValidationResult(ok=False, error="off_topic_content or parking_lot_item required")
+        return ValidationResult(ok=True, value=parsed)
