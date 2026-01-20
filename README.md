@@ -8,7 +8,7 @@ OpenAI Coxwave Hackathon 요구사항에 맞춰, 회의 도중의 **주제 이�
 ## 데모
 
 - 데모 URL: (추가 예정)
-- 데모 영상: (추가 예정)
+- 데모 영상: assets/demo.mov
 
 ### 데모 실행
 1. `backend/.env` 파일 생성 및 API key 기입
