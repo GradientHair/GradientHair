@@ -1,4 +1,5 @@
 """Topic Agent - 주제 이탈 감지"""
+import asyncio
 import os
 from typing import Optional
 
@@ -69,7 +70,7 @@ JSON 응답:
 
         if self.runner is None:
             return AnalysisResult(agent_name=self.name, needs_intervention=False)
-        parsed = self.runner.run(prompt)
+        parsed = await asyncio.to_thread(self.runner.run, prompt)
         if parsed is None:
             return AnalysisResult(agent_name=self.name, needs_intervention=False)
 

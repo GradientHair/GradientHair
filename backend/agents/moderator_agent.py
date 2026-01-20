@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 import uuid
@@ -62,7 +63,8 @@ JSON 응답:
             [f"{t.speaker}: {t.text}" for t in recent_transcript[-10:]]
         )
 
-        response = self.client.chat.completions.create(
+        response = await asyncio.to_thread(
+            self.client.chat.completions.create,
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},

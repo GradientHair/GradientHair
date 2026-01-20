@@ -1,3 +1,4 @@
+import asyncio
 import json
 from openai import OpenAI
 
@@ -41,7 +42,8 @@ JSON으로 응답:
 {{"speaker": "화자 이름", "confidence": 0.0-1.0, "text_ko": "한국어 전사"}}
 """
 
-        response = self.client.chat.completions.create(
+        response = await asyncio.to_thread(
+            self.client.chat.completions.create,
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
@@ -65,7 +67,8 @@ JSON으로 응답:
 JSON으로 응답:
 {{"text_ko": "한국어 문장"}}
 """
-        response = self.client.chat.completions.create(
+        response = await asyncio.to_thread(
+            self.client.chat.completions.create,
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
