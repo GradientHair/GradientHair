@@ -41,6 +41,7 @@ from services.principles_service import (
 from agents.review_agent import ReviewOrchestratorAgent
 from agents.safety_orchestrator import SafetyOrchestrator
 from agents.persona_dialogue_agent import PersonaDialogueAgent
+from agents.meeting_context import MeetingContext, AgentOrchestrator
 
 app = FastAPI(title="MeetingMod API")
 
@@ -738,6 +739,34 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
     pending_speech_end = False
     last_agent_run_at = 0.0
 
+    # New agent orchestration context
+    meeting_context = MeetingContext(meeting_state=state)
+
+    async def send_intervention_ws(intervention):
+        """Send intervention via WebSocket."""
+        try:
+            await manager.send_message(
+                meeting_id,
+                {
+                    "type": "intervention",
+                    "data": {
+                        "id": intervention.id,
+                        "type": intervention.intervention_type.value,
+                        "message": intervention.message,
+                        "timestamp": intervention.timestamp,
+                        "violatedPrinciple": intervention.violated_principle,
+                        "parkingLotItem": intervention.parking_lot_item,
+                        "suggestedSpeaker": intervention.suggested_speaker,
+                    },
+                },
+            )
+            state.interventions.append(intervention)
+            logger.info(f"[{meeting_id}] Sent intervention: {intervention.message}")
+        except Exception as e:
+            logger.error(f"[{meeting_id}] Failed to send intervention: {e}")
+
+    agent_orchestrator = AgentOrchestrator(send_intervention=send_intervention_ws)
+
     def _coerce_participants(raw_participants: list[dict], existing: list[Participant]) -> list[Participant]:
         existing_by_id = {p.id: p for p in existing}
         existing_by_name = {p.name: p for p in existing}
@@ -1128,6 +1157,16 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
                     logger.error(f"[{meeting_id}] Failed to send agent transcript: {e}")
 
                 await _send_speaker_stats()
+
+                # Run new agent orchestration pipeline
+                # Triage → Judge Agents → Intervention Agent
+                try:
+                    intervention = await agent_orchestrator.process_transcript(meeting_context)
+                    if intervention:
+                        logger.info(f"[{meeting_id}] Agent intervention triggered: {intervention.intervention_type.value}")
+                except Exception as e:
+                    logger.error(f"[{meeting_id}] Agent orchestration failed: {e}", exc_info=True)
+
                 await asyncio.sleep(0.8)
 
             await asyncio.sleep(1.0)
